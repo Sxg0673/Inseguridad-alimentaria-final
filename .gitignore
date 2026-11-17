@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+logs/*
+plugins/*
+data/batches/*
+!data/batches/.gitkeep
+data/raw/ecv/*
+!data/raw/ecv/.gitkeep
+docs/*.dbdiagram
+data/profiling/
+
+# Archivos de control internos del equipo (no se publican)
+.control/
+.DS_Store
