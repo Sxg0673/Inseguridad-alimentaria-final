@@ -1,0 +1,18 @@
+# Instala el codigo del proyecto (paquete "src") en el venv en modo editable,
+# para que los scripts de streaming/ puedan importar "src..." desde cualquier
+# carpeta. requirements.txt lo incluye con la linea "-e .".
+# Airflow no lo usa: dentro del contenedor la raiz ya esta en PYTHONPATH.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inseguridad-alimentaria-final"
+version = "1.0.0"
+description = "ETL batch (Airflow, Great Expectations, PostgreSQL) y streaming (Kafka, Streamlit) sobre inseguridad alimentaria en Colombia"
+requires-python = ">=3.12"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

@@ -1,3 +1,5 @@
+# Entorno virtual del equipo (Python 3.12): pruebas, notebooks y streaming.
+# La imagen de Airflow usa requirements-airflow.txt.
 numpy>=1.26
 pandas>=2.2,<3
 pyarrow>=18
@@ -7,3 +9,10 @@ psycopg2-binary>=2.9
 python-dotenv>=1.0
 ipykernel
 pytest>=8
+
+# Streaming
+confluent-kafka==2.16.1
+streamlit==1.67.0
+
+# Codigo del proyecto (paquete src) en modo editable: ver pyproject.toml
+-e .

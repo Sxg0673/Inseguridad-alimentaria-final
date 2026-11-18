@@ -1,6 +1,9 @@
 .env
 __pycache__/
 *.py[cod]
+.pytest_cache/
+# Instalacion editable del proyecto (pip install -e .)
+*.egg-info/
 .venv/
 logs/*
 plugins/*
