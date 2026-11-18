@@ -2,7 +2,7 @@
 
 Cómo conectar el dashboard al Data Warehouse, qué contiene cada vista y qué tener en cuenta para no interpretar mal los resultados.
 
-El enunciado exige que el dashboard **consulte el Data Warehouse** (PostgreSQL). No se aceptan conexiones a CSV, a la respuesta de la API ni a archivos intermedios (sección 21).
+El enunciado exige que el dashboard **consulte el Data Warehouse** (PostgreSQL). No se aceptan conexiones a CSV, a la respuesta de la API ni a archivos intermedios (README, sección 7).
 
 ## 1. Conexión
 
