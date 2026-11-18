@@ -1,0 +1,141 @@
+{
+  "compuerta": 1,
+  "nombre": "ECV cruda",
+  "fecha_utc": "2026-11-18T01:42:07+00:00",
+  "estado": "aprobada",
+  "reglas_evaluadas": [
+    "C1",
+    "C2"
+  ],
+  "criticas_fallidas": [],
+  "advertencias": [],
+  "metricas": {},
+  "resultados": [
+    {
+      "regla": "C1",
+      "descripcion": "Llave del hogar (DIRECTORIO, ORDEN) unica",
+      "severidad": "critical",
+      "tabla": "ecv_condiciones_vida",
+      "expectativa": "expect_compound_columns_to_be_unique",
+      "parametros": {
+        "column_list": [
+          "DIRECTORIO",
+          "ORDEN"
+        ]
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C1",
+      "descripcion": "DIRECTORIO sin nulos",
+      "severidad": "critical",
+      "tabla": "ecv_condiciones_vida",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "DIRECTORIO"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C1",
+      "descripcion": "ORDEN sin nulos",
+      "severidad": "critical",
+      "tabla": "ecv_condiciones_vida",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "ORDEN"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C1",
+      "descripcion": "Llave del hogar (DIRECTORIO, ORDEN) unica",
+      "severidad": "critical",
+      "tabla": "ecv_servicios_hogar",
+      "expectativa": "expect_compound_columns_to_be_unique",
+      "parametros": {
+        "column_list": [
+          "DIRECTORIO",
+          "ORDEN"
+        ]
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C1",
+      "descripcion": "DIRECTORIO sin nulos",
+      "severidad": "critical",
+      "tabla": "ecv_servicios_hogar",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "DIRECTORIO"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C1",
+      "descripcion": "ORDEN sin nulos",
+      "severidad": "critical",
+      "tabla": "ecv_servicios_hogar",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "ORDEN"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C2",
+      "descripcion": "P1_DEPARTAMENTO sin nulos",
+      "severidad": "critical",
+      "tabla": "ecv_vivienda",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "P1_DEPARTAMENTO"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C2",
+      "descripcion": "Departamento (zfill 2) dentro de DIVIPOLA",
+      "severidad": "critical",
+      "tabla": "ecv_vivienda",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "departamento_normalizado"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    }
+  ]
+}

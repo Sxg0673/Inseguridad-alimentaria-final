@@ -1,0 +1,382 @@
+{
+  "compuerta": 3,
+  "nombre": "Datos preparados",
+  "fecha_utc": "2026-11-18T03:08:24+00:00",
+  "estado": "aprobada_con_advertencias",
+  "reglas_evaluadas": [
+    "A3",
+    "C10",
+    "C11",
+    "C12",
+    "C13",
+    "C14",
+    "C15",
+    "C16"
+  ],
+  "criticas_fallidas": [],
+  "advertencias": [
+    "A3"
+  ],
+  "metricas": {
+    "diferencia_filas_hecho": 0.0,
+    "prevalencia_nacional_hecho": 21.0956400554884,
+    "prevalencia_recompuesta_departamentos": 21.097215190826287,
+    "diferencia_hogares_departamentos": 0.0,
+    "diferencia_produccion_t": 5.960464477539063e-08
+  },
+  "resultados": [
+    {
+      "regla": "C10",
+      "descripcion": "id_hogar unico",
+      "severidad": "critical",
+      "tabla": "fact_seguridad_alimentaria_hogar",
+      "expectativa": "expect_column_values_to_be_unique",
+      "parametros": {
+        "column": "id_hogar"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C10",
+      "descripcion": "Llave natural (directorio, orden) unica",
+      "severidad": "critical",
+      "tabla": "fact_seguridad_alimentaria_hogar",
+      "expectativa": "expect_compound_columns_to_be_unique",
+      "parametros": {
+        "column_list": [
+          "directorio",
+          "orden"
+        ]
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C12",
+      "descripcion": "Severidad \"Sin dato\" si y solo si la probabilidad FIES es nula",
+      "severidad": "critical",
+      "tabla": "fact_seguridad_alimentaria_hogar",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "sin_dato_coincide_con_nulo"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C13",
+      "descripcion": "Hogar sin choque <=> hogar sin estrategia",
+      "severidad": "critical",
+      "tabla": "fact_seguridad_alimentaria_hogar",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "choque_estrategia_coherente"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C13",
+      "descripcion": "numero_choques = suma de sus banderas",
+      "severidad": "critical",
+      "tabla": "dim_choque_economico",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "conteo_coincide"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C13",
+      "descripcion": "numero_estrategias = suma de sus banderas",
+      "severidad": "critical",
+      "tabla": "dim_estrategia_afrontamiento",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "conteo_coincide"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C14",
+      "descripcion": "Llave departamento + cultivo + anio unica",
+      "severidad": "critical",
+      "tabla": "fact_produccion_agricola",
+      "expectativa": "expect_compound_columns_to_be_unique",
+      "parametros": {
+        "column_list": [
+          "id_departamento",
+          "id_cultivo",
+          "anio"
+        ]
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C16",
+      "descripcion": "Estado de comparabilidad valido",
+      "severidad": "critical",
+      "tabla": "fact_variacion_produccion",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "estado_comparabilidad"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C16",
+      "descripcion": "Variacion y descenso existen solo si el par es comparable",
+      "severidad": "critical",
+      "tabla": "fact_variacion_produccion",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "nulos_segun_estado"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C16",
+      "descripcion": "Variacion sin infinitos",
+      "severidad": "critical",
+      "tabla": "fact_variacion_produccion",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "variacion_finita"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C16",
+      "descripcion": "Variacion >= -100 %",
+      "severidad": "critical",
+      "tabla": "fact_variacion_produccion",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "variacion_pct",
+        "min_value": -100.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C15",
+      "descripcion": "Una fila por departamento (33)",
+      "severidad": "critical",
+      "tabla": "fact_indicadores_departamento",
+      "expectativa": "expect_table_row_count_to_equal",
+      "parametros": {
+        "value": 33
+      },
+      "exito": true,
+      "observado": 33,
+      "inesperados": null,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C15",
+      "descripcion": "id_departamento unico",
+      "severidad": "critical",
+      "tabla": "fact_indicadores_departamento",
+      "expectativa": "expect_column_values_to_be_unique",
+      "parametros": {
+        "column": "id_departamento"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C15",
+      "descripcion": "Indicadores agricolas nulos solo donde no hay EVA (nunca 0 imputado)",
+      "severidad": "critical",
+      "tabla": "fact_indicadores_departamento",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "agricola_nulo_solo_sin_eva"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C16",
+      "descripcion": "% de cultivos en descenso entre 0 y 100",
+      "severidad": "critical",
+      "tabla": "fact_indicadores_departamento",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "pct_cultivos_en_descenso",
+        "min_value": 0.0,
+        "max_value": 100.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C16",
+      "descripcion": "Cultivos en descenso <= cultivos comparables",
+      "severidad": "critical",
+      "tabla": "fact_indicadores_departamento",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "descenso_no_supera_comparables"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "A3",
+      "descripcion": "Departamento con menos de 15 cultivos comparables (baja cobertura)",
+      "severidad": "warning",
+      "tabla": "fact_indicadores_departamento",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "baja_cobertura"
+      },
+      "exito": false,
+      "observado": null,
+      "inesperados": 1,
+      "ejemplos": [
+        "True"
+      ],
+      "excepcion": null
+    },
+    {
+      "regla": "C10",
+      "descripcion": "Filas del hecho = filas transformadas (sin fan-out)",
+      "severidad": "critical",
+      "tabla": "conciliacion_preparados",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "diferencia_filas_hecho",
+        "min_value": 0.0,
+        "max_value": 0.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C11",
+      "descripcion": "Prevalencia nacional del hecho = 21,1 % +/- 0,1",
+      "severidad": "critical",
+      "tabla": "conciliacion_preparados",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "prevalencia_nacional_hecho",
+        "min_value": 21.0,
+        "max_value": 21.200000000000003
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C11",
+      "descripcion": "Prevalencia recompuesta desde la tabla departamental = 21,1 % +/- 0,1",
+      "severidad": "critical",
+      "tabla": "conciliacion_preparados",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "prevalencia_recompuesta_departamentos",
+        "min_value": 21.0,
+        "max_value": 21.200000000000003
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C11",
+      "descripcion": "Hogares por departamento suman el total de la ECV",
+      "severidad": "critical",
+      "tabla": "conciliacion_preparados",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "diferencia_hogares_departamentos",
+        "min_value": 0.0,
+        "max_value": 0.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C14",
+      "descripcion": "La agregacion conserva la produccion (diferencia < 1 t por redondeo)",
+      "severidad": "critical",
+      "tabla": "conciliacion_preparados",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "diferencia_produccion_t",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "strict_max": true
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    }
+  ]
+}

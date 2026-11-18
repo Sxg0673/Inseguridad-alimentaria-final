@@ -1,0 +1,24 @@
+{
+  "fecha_utc": "2026-11-18T03:08:54+00:00",
+  "estado_compuerta_3": "aprobada_con_advertencias",
+  "estrategia": "TRUNCATE + INSERT en una transaccion",
+  "filas_por_tabla": {
+    "dim_geografia": 65,
+    "dim_nivel_ingreso": 6,
+    "dim_nivel_severidad_ia": 5,
+    "dim_choque_economico": 172,
+    "dim_estrategia_afrontamiento": 265,
+    "dim_departamento": 33,
+    "dim_cultivo": 160,
+    "fact_seguridad_alimentaria_hogar": 87060,
+    "fact_produccion_agricola": 3204,
+    "fact_variacion_produccion": 1493,
+    "fact_indicadores_departamento": 33
+  },
+  "tablas_streaming_reiniciadas": [
+    "stg_evento_encuesta",
+    "fact_evento_encuesta",
+    "fact_metrica_departamento_stream"
+  ],
+  "total_filas": 92496
+}

@@ -1,0 +1,445 @@
+{
+  "compuerta": 2,
+  "nombre": "EVA cruda (API)",
+  "fecha_utc": "2026-11-18T03:07:24+00:00",
+  "estado": "aprobada",
+  "reglas_evaluadas": [
+    "A1",
+    "A2",
+    "C3",
+    "C4",
+    "C5",
+    "C6",
+    "C7",
+    "C8",
+    "C9"
+  ],
+  "criticas_fallidas": [],
+  "advertencias": [],
+  "metricas": {
+    "diferencia_extraidos_api_2024": 0,
+    "departamentos_2024": 32,
+    "diferencia_extraidos_api_2025": 0,
+    "departamentos_2025": 32
+  },
+  "resultados": [
+    {
+      "regla": "C4",
+      "descripcion": "Llegan los 18 campos esperados de la API",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_table_columns_to_match_set",
+      "parametros": {
+        "column_set": [
+          "c_digo_dane_departamento",
+          "departamento",
+          "c_digo_dane_municipio",
+          "municipio",
+          "grupo_cultivo",
+          "subgrupo",
+          "cultivo",
+          "desagregaci_n_cultivo",
+          "a_o",
+          "periodo",
+          "rea_sembrada",
+          "rea_cosechada",
+          "producci_n",
+          "rendimiento",
+          "ciclo_del_cultivo",
+          "estado_f_sico_del_cultivo",
+          "c_digo_del_cultivo",
+          "nombre_cient_fico_del_cultivo"
+        ],
+        "exact_match": false
+      },
+      "exito": true,
+      "observado": [
+        "a_o",
+        "c_digo_dane_departamento",
+        "c_digo_dane_municipio",
+        "c_digo_del_cultivo",
+        "ciclo_del_cultivo",
+        "cultivo",
+        "departamento",
+        "desagregaci_n_cultivo",
+        "estado_f_sico_del_cultivo",
+        "grupo_cultivo",
+        "municipio",
+        "nombre_cient_fico_del_cultivo",
+        "periodo",
+        "periodo_valido",
+        "prefijo_municipio_valido",
+        "producci_n",
+        "razon_rendimiento_mediana",
+        "rea_cosechada",
+        "rea_sembrada",
+        "rendimiento",
+        "subgrupo"
+      ],
+      "inesperados": null,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C7",
+      "descripcion": "Llave municipio + codigo de cultivo + periodo unica",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_compound_columns_to_be_unique",
+      "parametros": {
+        "column_list": [
+          "c_digo_dane_municipio",
+          "c_digo_del_cultivo",
+          "periodo"
+        ]
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C5",
+      "descripcion": "Anio en {2024, 2025}",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "a_o"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C5",
+      "descripcion": "Llegan los dos anios",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_distinct_values_to_equal_set",
+      "parametros": {
+        "column": "a_o"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C5",
+      "descripcion": "Periodo = anio, anio+A o anio+B",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "periodo_valido"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C8",
+      "descripcion": "Departamento dentro de DIVIPOLA",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "c_digo_dane_departamento"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C8",
+      "descripcion": "Municipio de 5 digitos",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_match_regex",
+      "parametros": {
+        "column": "c_digo_dane_municipio",
+        "regex": "^\\d{5}$"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C8",
+      "descripcion": "Municipio con el prefijo de su departamento",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "prefijo_municipio_valido"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C9",
+      "descripcion": "Todo cultivo esta clasificado en la canasta",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_be_in_set",
+      "parametros": {
+        "column": "cultivo"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "A2",
+      "descripcion": "Rendimiento <= 20 veces la mediana de su codigo",
+      "severidad": "warning",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "razon_rendimiento_mediana",
+        "max_value": 20.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C6",
+      "descripcion": "rea_sembrada sin nulos",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "rea_sembrada"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C6",
+      "descripcion": "rea_sembrada numerico y >= 0 (formato con punto decimal)",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_match_regex",
+      "parametros": {
+        "column": "rea_sembrada",
+        "regex": "^\\d+(?:\\.\\d+)?$"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C6",
+      "descripcion": "rea_cosechada sin nulos",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "rea_cosechada"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C6",
+      "descripcion": "rea_cosechada numerico y >= 0 (formato con punto decimal)",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_match_regex",
+      "parametros": {
+        "column": "rea_cosechada",
+        "regex": "^\\d+(?:\\.\\d+)?$"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C6",
+      "descripcion": "producci_n sin nulos",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "producci_n"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C6",
+      "descripcion": "producci_n numerico y >= 0 (formato con punto decimal)",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_match_regex",
+      "parametros": {
+        "column": "producci_n",
+        "regex": "^\\d+(?:\\.\\d+)?$"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C6",
+      "descripcion": "rendimiento sin nulos",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "rendimiento"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C6",
+      "descripcion": "rendimiento numerico y >= 0 (formato con punto decimal)",
+      "severidad": "critical",
+      "tabla": "eva_registros",
+      "expectativa": "expect_column_values_to_match_regex",
+      "parametros": {
+        "column": "rendimiento",
+        "regex": "^\\d+(?:\\.\\d+)?$"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C3",
+      "descripcion": "Registros extraidos = count(*) de la API (2024)",
+      "severidad": "critical",
+      "tabla": "eva_conciliacion",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "diferencia_extraidos_api_2024",
+        "min_value": 0.0,
+        "max_value": 0.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C3",
+      "descripcion": "Conteo de conciliacion disponible (2024)",
+      "severidad": "critical",
+      "tabla": "eva_conciliacion",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "diferencia_extraidos_api_2024"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "A1",
+      "descripcion": "32 departamentos con datos (2024)",
+      "severidad": "warning",
+      "tabla": "eva_conciliacion",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "departamentos_2024",
+        "min_value": 32.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C3",
+      "descripcion": "Registros extraidos = count(*) de la API (2025)",
+      "severidad": "critical",
+      "tabla": "eva_conciliacion",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "diferencia_extraidos_api_2025",
+        "min_value": 0.0,
+        "max_value": 0.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "C3",
+      "descripcion": "Conteo de conciliacion disponible (2025)",
+      "severidad": "critical",
+      "tabla": "eva_conciliacion",
+      "expectativa": "expect_column_values_to_not_be_null",
+      "parametros": {
+        "column": "diferencia_extraidos_api_2025"
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    },
+    {
+      "regla": "A1",
+      "descripcion": "32 departamentos con datos (2025)",
+      "severidad": "warning",
+      "tabla": "eva_conciliacion",
+      "expectativa": "expect_column_values_to_be_between",
+      "parametros": {
+        "column": "departamentos_2025",
+        "min_value": 32.0
+      },
+      "exito": true,
+      "observado": null,
+      "inesperados": 0,
+      "ejemplos": [],
+      "excepcion": null
+    }
+  ]
+}
