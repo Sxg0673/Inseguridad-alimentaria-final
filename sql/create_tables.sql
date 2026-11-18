@@ -1,5 +1,5 @@
 -- =====================================================================
--- DDL del Data Warehouse - Segunda Entrega
+-- DDL del Data Warehouse - Entrega final
 -- Motor: PostgreSQL 16. Esquema: public.
 -- Modelo: docs/modelo_dimensional.dbml
 --
@@ -8,6 +8,9 @@
 -- Que una carga repetida no duplique filas lo garantiza la carga, no el DDL.
 --
 -- Orden: dimensiones antes que hechos, porque los hechos las referencian.
+--
+-- Secciones: hogares (Primera Entrega), agricola (Segunda Entrega) y
+-- streaming (Entrega final).
 -- =====================================================================
 
 
@@ -253,5 +256,101 @@ CREATE TABLE IF NOT EXISTS fact_indicadores_departamento (
     baja_cobertura                  BOOLEAN,
     CONSTRAINT pk_fact_indicadores_departamento PRIMARY KEY (id_departamento),
     CONSTRAINT fk_indicadores_departamento
+        FOREIGN KEY (id_departamento) REFERENCES dim_departamento (id_departamento)
+);
+
+
+-- =====================================================================
+-- STREAMING (Entrega final)
+-- Llegada simulada de encuestas de hogar por Kafka (re-publicacion de
+-- fact_seguridad_alimentaria_hogar). Documentado en la
+-- seccion 8 del README.
+--
+-- Estas tablas se vacian en el mismo TRUNCATE de la carga (src/carga.py):
+-- dependen de las claves sustitutas de la carga vigente, asi que una
+-- nueva carga del DW reinicia el streaming. No se cargan desde el lote:
+-- las llena el consumidor de Kafka.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- STG_EVENTO_ENCUESTA (staging, no es parte del modelo analitico)
+-- Grano: un mensaje de Kafka tal como llego, guardado ANTES de validarlo.
+-- (topic, particion, desplazamiento) identifica el mensaje: si Kafka lo
+-- reentrega tras un reinicio, no se duplica. contenido es TEXT y no JSONB
+-- para conservar tambien un JSON mal formado.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS stg_evento_encuesta (
+    id_evento_crudo         BIGSERIAL,
+    topic                   TEXT NOT NULL,
+    particion               INTEGER NOT NULL,
+    desplazamiento          BIGINT NOT NULL,
+    clave                   TEXT,
+    contenido               TEXT,
+    estado                  TEXT NOT NULL DEFAULT 'RECIBIDO',
+    motivo                  TEXT,
+    recibido_en             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    procesado_en            TIMESTAMPTZ,
+    CONSTRAINT pk_stg_evento_encuesta PRIMARY KEY (id_evento_crudo),
+    CONSTRAINT uq_stg_evento_mensaje UNIQUE (topic, particion, desplazamiento),
+    CONSTRAINT ck_stg_evento_estado CHECK (estado IN (
+        'RECIBIDO', 'VALIDO', 'INVALIDO_ESQUEMA', 'INVALIDO_VALORES',
+        'INVALIDO_REFERENCIA', 'DUPLICADO'))
+);
+
+-- ---------------------------------------------------------------------
+-- FACT_EVENTO_ENCUESTA (hecho transaccional del streaming)
+-- Grano: la llegada valida de la encuesta de un hogar, procesada por el
+-- consumidor. Un hogar se encuesta una sola vez: (directorio, orden) es
+-- unico; una segunda llegada queda como DUPLICADO en el staging.
+-- Sin dimension de tiempo: las metricas se miden en segundos y minutos,
+-- sin jerarquia de calendario; el tiempo va como atributo del hecho.
+-- Probabilidades nulas si y solo si la severidad es "Sin dato" (C12).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS fact_evento_encuesta (
+    id_evento_encuesta      BIGSERIAL,
+    id_evento_crudo         BIGINT NOT NULL,
+    id_evento               UUID NOT NULL,
+    directorio              VARCHAR(10) NOT NULL,
+    orden                   VARCHAR(2) NOT NULL,
+    id_geografia            INTEGER NOT NULL,
+    id_nivel_severidad_ia   INTEGER NOT NULL,
+    factor_expansion        DECIMAL(15, 9) NOT NULL,
+    prob_ia_moderada_grave  DECIMAL(12, 9),
+    prob_ia_grave           DECIMAL(12, 9),
+    momento_evento          TIMESTAMPTZ NOT NULL,
+    momento_procesado       TIMESTAMPTZ NOT NULL,
+    latencia_ms             INTEGER NOT NULL,
+    CONSTRAINT pk_fact_evento_encuesta PRIMARY KEY (id_evento_encuesta),
+    CONSTRAINT uq_evento_crudo UNIQUE (id_evento_crudo),
+    CONSTRAINT uq_evento_id UNIQUE (id_evento),
+    CONSTRAINT uq_evento_hogar UNIQUE (directorio, orden),
+    CONSTRAINT fk_evento_crudo
+        FOREIGN KEY (id_evento_crudo) REFERENCES stg_evento_encuesta (id_evento_crudo),
+    CONSTRAINT fk_evento_geografia
+        FOREIGN KEY (id_geografia) REFERENCES dim_geografia (id_geografia),
+    CONSTRAINT fk_evento_severidad
+        FOREIGN KEY (id_nivel_severidad_ia) REFERENCES dim_nivel_severidad_ia (id_nivel_severidad_ia)
+);
+
+-- ---------------------------------------------------------------------
+-- FACT_METRICA_DEPARTAMENTO_STREAM (snapshot acumulado)
+-- Grano: el estado acumulado del operativo de recoleccion en un
+-- departamento. El consumidor la actualiza (upsert) en la misma
+-- transaccion en que inserta el evento en fact_evento_encuesta.
+-- Solo guarda conteos y sumas aditivas: las prevalencias se calculan en
+-- vistas como cociente de sumas, nunca promediando porcentajes.
+-- hogares_grave: hogares con severidad "Inseguridad grave" (puntaje FIES).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS fact_metrica_departamento_stream (
+    id_departamento         INTEGER NOT NULL,
+    hogares_recibidos       INTEGER NOT NULL DEFAULT 0,
+    hogares_con_fies        INTEGER NOT NULL DEFAULT 0,
+    hogares_grave           INTEGER NOT NULL DEFAULT 0,
+    suma_fex_con_fies       DECIMAL(20, 9) NOT NULL DEFAULT 0,
+    suma_fex_prob_mg        DECIMAL(24, 9) NOT NULL DEFAULT 0,
+    suma_fex_prob_g         DECIMAL(24, 9) NOT NULL DEFAULT 0,
+    actualizado_en          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT pk_fact_metrica_departamento_stream PRIMARY KEY (id_departamento),
+    CONSTRAINT fk_metrica_departamento
         FOREIGN KEY (id_departamento) REFERENCES dim_departamento (id_departamento)
 );

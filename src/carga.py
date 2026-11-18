@@ -5,17 +5,24 @@ Carga del modelo dimensional al Data Warehouse (PostgreSQL).
    aprobada no se carga nada.
 2. Lee las 11 tablas desde el lote (Parquet), verificando su sha256.
 3. En una sola transaccion: crea las tablas si no existen (sql/create_tables.sql),
-   vacia las 11 con un unico TRUNCATE e inserta en orden (dimensiones antes que
-   hechos). Si algo falla, PostgreSQL revierte todo y el warehouse queda como
-   estaba.
+   vacia las 11 del modelo y las 3 del streaming con un unico TRUNCATE e
+   inserta en orden (dimensiones antes que hechos). Si algo falla, PostgreSQL
+   revierte todo y el warehouse queda como estaba.
 4. Concilia: el conteo de cada tabla en la base debe ser igual al del lote.
 5. Recrea las vistas analiticas R1-R7 (sql/vistas_analiticas.sql), que consume
-   el dashboard.
+   el dashboard historico, y las del streaming (sql/vistas_streaming.sql).
 6. Guarda el resultado en data/batches/<id>/carga/carga.json.
 
 Re-ejecucion segura (test C): las fuentes son fotos completas, asi que cada
 carga reemplaza el contenido por el del lote. Cargar dos veces el mismo lote
 deja exactamente los mismos datos, sin duplicados.
+
+Streaming: las tablas del streaming tienen FK hacia dimensiones de esta carga
+(dim_geografia, dim_nivel_severidad_ia, dim_departamento), cuyas claves
+sustitutas se reconstruyen en cada carga. Por eso entran en el mismo TRUNCATE
+(PostgreSQL no permite vaciar una tabla referenciada por otra que no se vacia
+en la misma orden) y una carga nueva reinicia el streaming. No se cargan desde
+el lote ni se concilian: las llena el consumidor de Kafka.
 
 Errores: no poder conectarse a la base es transitorio (se puede reintentar);
 cualquier otro error de base de datos o de conciliacion es determinista.
@@ -35,6 +42,7 @@ from src.comun.errores import ErrorDeterminista, ErrorTransitorio
 
 NOMBRE_DDL = 'create_tables.sql'
 NOMBRE_VISTAS = 'vistas_analiticas.sql'
+NOMBRE_VISTAS_STREAMING = 'vistas_streaming.sql'
 ESTADOS_QUE_PERMITEN_CARGAR = ('aprobada', 'aprobada_con_advertencias')
 log = logging.getLogger(__name__)
 
@@ -51,6 +59,14 @@ TABLAS = [
     ('eva', 'fact_produccion_agricola'),
     ('eva', 'fact_variacion_produccion'),
     ('integrado', 'fact_indicadores_departamento'),
+]
+
+# Tablas del streaming: se vacian junto con las del modelo, pero no se cargan
+# desde el lote (las llena el consumidor de Kafka).
+TABLAS_STREAMING = [
+    'stg_evento_encuesta',
+    'fact_evento_encuesta',
+    'fact_metrica_departamento_stream',
 ]
 
 
@@ -72,6 +88,7 @@ def cargar(lote):
     tablas = {tabla: leer_parquet(lote, fuente, tabla) for fuente, tabla in TABLAS}
     ddl = (dir_sql() / NOMBRE_DDL).read_text(encoding='utf-8')
     vistas = (dir_sql() / NOMBRE_VISTAS).read_text(encoding='utf-8')
+    vistas_streaming = (dir_sql() / NOMBRE_VISTAS_STREAMING).read_text(encoding='utf-8')
 
     try:
         conexion = psycopg2.connect(url_warehouse(), connect_timeout=15)
@@ -83,8 +100,10 @@ def cargar(lote):
         with conexion:  # una transaccion: commit al final o rollback ante cualquier error
             with conexion.cursor() as cursor:
                 cursor.execute(ddl)
-                cursor.execute(sql.SQL('TRUNCATE TABLE {}').format(
-                    sql.SQL(', ').join(sql.Identifier(t) for _, t in TABLAS)))
+                a_vaciar = [t for _, t in TABLAS] + TABLAS_STREAMING
+                cursor.execute(sql.SQL('TRUNCATE TABLE {} RESTART IDENTITY').format(
+                    sql.SQL(', ').join(sql.Identifier(t) for t in a_vaciar)))
+                log.info('Tablas del streaming reiniciadas junto con el modelo: %s', ', '.join(TABLAS_STREAMING))
                 for _, tabla in TABLAS:
                     df = tablas[tabla]
                     consulta = sql.SQL('INSERT INTO {} ({}) VALUES %s').format(
@@ -101,6 +120,8 @@ def cargar(lote):
                     log.info('Cargada %s: %s filas (conciliado con el lote)', tabla, f'{en_base:,}')
                 cursor.execute(vistas)
                 log.info('Vistas analiticas R1-R7 recreadas (%s)', NOMBRE_VISTAS)
+                cursor.execute(vistas_streaming)
+                log.info('Vistas del streaming recreadas (%s)', NOMBRE_VISTAS_STREAMING)
     except psycopg2.Error as error:
         raise ErrorDeterminista(f'Error de base de datos durante la carga (revertida): {error}') from error
     finally:
@@ -112,6 +133,7 @@ def cargar(lote):
         'estado_compuerta_3': estado_compuerta,
         'estrategia': 'TRUNCATE + INSERT en una transaccion',
         'filas_por_tabla': conteos,
+        'tablas_streaming_reiniciadas': TABLAS_STREAMING,
         'total_filas': sum(conteos.values()),
     })
     lotes.registrar_archivo(lote, 'carga', ruta)

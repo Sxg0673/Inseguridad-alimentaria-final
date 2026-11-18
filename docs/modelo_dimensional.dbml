@@ -1,10 +1,10 @@
-// Modelo dimensional - Segunda Entrega (aprobado 2026-10-21)
+// Modelo dimensional - Entrega final (base: Segunda Entrega, aprobado 2026-10-21; streaming agregado en la entrega final)
 // Visualizar con dbdiagram.io o la extension DBML de VS Code.
 // Las tablas del grupo "hogares" son las de la Primera Entrega, sin cambios.
 
 Project inseguridad_alimentaria {
   database_type: 'PostgreSQL'
-  Note: 'ECV 2025 (DANE) + EVA 2024-2025 (UPRA). R1-R5 sobre el hecho de hogares; R6-R7 cruzan hogares y produccion agricola por departamento (drill-across).'
+  Note: 'ECV 2025 (DANE) + EVA 2024-2025 (UPRA). R1-R5 sobre el hecho de hogares; R6-R7 cruzan hogares y produccion agricola por departamento (drill-across). RS1-RS4: llegada simulada de encuestas por Kafka.'
 }
 
 // =====================================================================
@@ -198,3 +198,70 @@ TableGroup agricola_segunda_entrega {
   dim_departamento
   dim_cultivo
 }
+
+// =====================================================================
+// STREAMING (Entrega final)
+// Se vacian en el mismo TRUNCATE de la carga: dependen de las claves
+// sustitutas de la carga vigente. Las llena el consumidor de Kafka.
+// =====================================================================
+
+Table stg_evento_encuesta {
+  id_evento_crudo bigserial [pk]
+  topic text [not null]
+  particion integer [not null]
+  desplazamiento bigint [not null]
+  clave text [note: 'Codigo de departamento tal como llego en la clave del mensaje']
+  contenido text [note: 'Mensaje exacto, aunque sea un JSON roto']
+  estado text [not null, note: 'RECIBIDO, VALIDO, INVALIDO_ESQUEMA, INVALIDO_VALORES, INVALIDO_REFERENCIA, DUPLICADO']
+  motivo text
+  recibido_en timestamptz [not null]
+  procesado_en timestamptz
+  indexes {
+    (topic, particion, desplazamiento) [unique]
+  }
+  Note: 'Staging (no es parte del modelo analitico). Grano: un mensaje de Kafka, guardado antes de validarlo.'
+}
+
+Table fact_evento_encuesta {
+  id_evento_encuesta bigserial [pk]
+  id_evento_crudo bigint [not null, unique]
+  id_evento uuid [not null, unique, note: 'Dimension degenerada: id del contrato del evento']
+  directorio varchar(10) [not null]
+  orden varchar(2) [not null]
+  id_geografia integer [not null]
+  id_nivel_severidad_ia integer [not null]
+  factor_expansion decimal(15,9) [not null]
+  prob_ia_moderada_grave decimal(12,9) [note: 'Nulo si y solo si severidad = Sin dato (C12)']
+  prob_ia_grave decimal(12,9)
+  momento_evento timestamptz [not null]
+  momento_procesado timestamptz [not null]
+  latencia_ms integer [not null]
+  indexes {
+    (directorio, orden) [unique, note: 'Un hogar se encuesta una sola vez']
+  }
+  Note: 'Hecho transaccional. Grano: la llegada valida de la encuesta de un hogar, procesada por el consumidor. RS2-RS4.'
+}
+
+Table fact_metrica_departamento_stream {
+  id_departamento integer [pk]
+  hogares_recibidos integer [not null]
+  hogares_con_fies integer [not null]
+  hogares_grave integer [not null]
+  suma_fex_con_fies decimal(20,9) [not null]
+  suma_fex_prob_mg decimal(24,9) [not null]
+  suma_fex_prob_g decimal(24,9) [not null]
+  actualizado_en timestamptz [not null]
+  Note: 'Snapshot acumulado. Grano: el estado acumulado del operativo de recoleccion en un departamento. RS1-RS3.'
+}
+
+Ref: fact_evento_encuesta.id_evento_crudo - stg_evento_encuesta.id_evento_crudo
+Ref: fact_evento_encuesta.id_geografia > dim_geografia.id_geografia
+Ref: fact_evento_encuesta.id_nivel_severidad_ia > dim_nivel_severidad_ia.id_nivel_severidad_ia
+Ref: fact_metrica_departamento_stream.id_departamento - dim_departamento.id_departamento
+
+TableGroup streaming_entrega_final {
+  stg_evento_encuesta
+  fact_evento_encuesta
+  fact_metrica_departamento_stream
+}
+
