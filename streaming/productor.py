@@ -10,6 +10,7 @@ Uso (con el DW cargado y Kafka arriba; ver README, seccion 10):
     python streaming/productor.py --eventos-por-segundo 200
     python streaming/productor.py --con-invalidos          intercala 6 eventos danados a proposito
     python streaming/productor.py --completo               los 87.060 hogares sin pausa (prueba de coherencia)
+    python streaming/productor.py --pendientes             solo los que faltan (despues de streaming/precargar.py)
 
 Codigo de salida: 0 si todo se entrego, 1 si fallo, 130 si se interrumpio con Ctrl+C.
 """
@@ -21,6 +22,7 @@ import time
 import psycopg2
 
 from src.streaming import config, fuente
+from src.streaming.precarga import hogares_recibidos
 from src.streaming.publicacion import CASOS_INVALIDOS, Estadisticas, construir_plan, enviar
 
 log = logging.getLogger('productor')
@@ -45,10 +47,12 @@ def leer_argumentos(argv=None):
         description='Re-publica los hogares del DW en Kafka (llegada simulada de encuestas).')
     parser.add_argument('--eventos-por-segundo', type=_positivo(float), default=EVENTOS_POR_SEGUNDO,
                         help=f'ritmo de publicacion (por defecto {EVENTOS_POR_SEGUNDO})')
-    parser.add_argument('--limite', type=_positivo(int), default=LIMITE,
-                        help=f'cuantos hogares publicar (por defecto {LIMITE})')
+    parser.add_argument('--limite', type=_positivo(int), default=None,
+                        help=f'cuantos hogares publicar (por defecto {LIMITE}; con --pendientes, todos los que faltan)')
     parser.add_argument('--completo', action='store_true',
                         help='todos los hogares y sin pausa (ignora --limite y --eventos-por-segundo)')
+    parser.add_argument('--pendientes', action='store_true',
+                        help='publicar solo los hogares que aun no estan en el streaming (despues de precargar.py)')
     parser.add_argument('--con-invalidos', action='store_true',
                         help=f'intercalar {len(CASOS_INVALIDOS) + 1} eventos danados a proposito')
     parser.add_argument('--semilla', type=int, default=SEMILLA,
@@ -117,7 +121,9 @@ def main(argv=None, crear=crear_productor):
         return 1
     try:
         hogares = fuente.leer_hogares(conexion)
-        avisar_si_hay_datos(conexion)
+        recibidos = hogares_recibidos(conexion) if args.pendientes else set()
+        if not args.pendientes:
+            avisar_si_hay_datos(conexion)
     except psycopg2.Error as error:
         log.error('No se pudo leer el DW (%s). Correr primero el DAG inseguridad_alimentaria_etl.', str(error).strip())
         return 1
@@ -127,9 +133,17 @@ def main(argv=None, crear=crear_productor):
         log.error('El hecho de hogares esta vacio. Correr primero el DAG inseguridad_alimentaria_etl.')
         return 1
 
-    limite = None if args.completo else args.limite
-    ritmo = None if args.completo else args.eventos_por_segundo
-    seleccion = fuente.ordenar_para_envio(hogares, args.semilla, limite)
+    if args.completo:
+        limite, ritmo = None, None
+    else:
+        limite = args.limite if args.limite is not None else (None if args.pendientes else LIMITE)
+        ritmo = args.eventos_por_segundo
+    # Mismo orden que la precarga (misma semilla); con --pendientes se quitan los ya recibidos
+    seleccion = [h for h in fuente.ordenar_para_envio(hogares, args.semilla)
+                 if (h['directorio'], h['orden']) not in recibidos][:limite]
+    if args.pendientes and not seleccion:
+        log.info('No hay hogares pendientes: el streaming ya tiene los %s', f'{len(hogares):,}')
+        return 0
     plan = construir_plan(seleccion, args.con_invalidos)
     estadisticas = Estadisticas(total=len(plan))
     log.info('SIMULACION: %s de %s hogares del DW en %s, %s', f'{len(seleccion):,}', f'{len(hogares):,}', topic,

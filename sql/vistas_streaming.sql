@@ -131,6 +131,9 @@ SELECT
 	ROUND((SUM(m.suma_fex_prob_g) / NULLIF(SUM(m.suma_fex_con_fies), 0))::numeric, 2) AS prevalencia_grave_pct,
 	ROUND(r.prevalencia_moderada_grave_pct::numeric, 2) AS referencia_nacional_pct,
 	(SELECT COUNT(*) FROM vw_stream_departamento WHERE estado_alerta = 'alerta') AS departamentos_en_alerta,
+	-- precargados = total del snapshot - llegados por Kafka (no recorre las filas de la precarga)
+	COALESCE(SUM(m.hogares_recibidos), 0)
+		- (SELECT COUNT(*) FROM fact_evento_encuesta WHERE origen = 'kafka') AS hogares_precargados,
 	MAX(m.actualizado_en) AS actualizado_en
 FROM vw_stream_referencia_nacional r
 LEFT JOIN fact_metrica_departamento_stream m ON TRUE
@@ -140,44 +143,79 @@ GROUP BY r.hogares_esperados, r.prevalencia_moderada_grave_pct;
 -- Evolucion en el tiempo (para graficar como cambian las metricas).
 -- Intervalos de 10 segundos de procesamiento: la demo dura minutos, asi
 -- que intervalos de un minuto darian muy pocos puntos.
+-- Solo recorre los eventos llegados por Kafka (indice parcial). La
+-- precarga entra como linea base: totales del snapshot menos lo llegado
+-- por Kafka, sin recorrer sus filas.
 -- ---------------------------------------------------------------------
 CREATE VIEW vw_stream_evolucion AS
-WITH por_intervalo AS (
+WITH kafka AS (
 	SELECT
 		date_bin('10 seconds', momento_procesado, TIMESTAMPTZ '2000-01-01') AS intervalo,
+		factor_expansion, prob_ia_moderada_grave, latencia_ms
+	FROM fact_evento_encuesta
+	WHERE origen = 'kafka'
+),
+total_kafka AS (
+	SELECT COUNT(*) AS hogares,
+		COALESCE(SUM(factor_expansion) FILTER (WHERE prob_ia_moderada_grave IS NOT NULL), 0) AS fex,
+		COALESCE(SUM(factor_expansion * prob_ia_moderada_grave), 0) AS fex_prob
+	FROM kafka
+),
+base AS (
+	SELECT
+		COALESCE(SUM(m.hogares_recibidos), 0) - t.hogares AS hogares,
+		COALESCE(SUM(m.suma_fex_con_fies), 0) - t.fex AS fex,
+		COALESCE(SUM(m.suma_fex_prob_mg), 0) - t.fex_prob AS fex_prob
+	FROM fact_metrica_departamento_stream m CROSS JOIN total_kafka t
+	GROUP BY t.hogares, t.fex, t.fex_prob
+),
+por_intervalo AS (
+	SELECT
+		intervalo,
 		COUNT(*) AS eventos,
 		SUM(factor_expansion) FILTER (WHERE prob_ia_moderada_grave IS NOT NULL) AS suma_fex_con_fies,
 		SUM(factor_expansion * prob_ia_moderada_grave) AS suma_fex_prob_mg,
 		AVG(latencia_ms) AS latencia_media_ms
-	FROM fact_evento_encuesta
+	FROM kafka
 	GROUP BY 1
 )
 SELECT
-	intervalo,
-	eventos,
-	SUM(eventos) OVER (ORDER BY intervalo) AS hogares_acumulados,
-	ROUND((SUM(suma_fex_prob_mg) OVER (ORDER BY intervalo)
-		/ NULLIF(SUM(suma_fex_con_fies) OVER (ORDER BY intervalo), 0))::numeric, 2)
-		AS prevalencia_acumulada_pct,
-	ROUND(latencia_media_ms::numeric, 1) AS latencia_media_ms
-FROM por_intervalo;
+	p.intervalo,
+	p.eventos,
+	b.hogares + SUM(p.eventos) OVER w AS hogares_acumulados,
+	ROUND(((b.fex_prob + SUM(COALESCE(p.suma_fex_prob_mg, 0)) OVER w)
+		/ NULLIF(b.fex + SUM(COALESCE(p.suma_fex_con_fies, 0)) OVER w, 0))::numeric, 2) AS prevalencia_acumulada_pct,
+	ROUND(p.latencia_media_ms::numeric, 1) AS latencia_media_ms
+FROM por_intervalo p
+CROSS JOIN base b
+WINDOW w AS (ORDER BY p.intervalo);
 
 -- ---------------------------------------------------------------------
 -- RS4: salud del flujo (una fila). Estados del staging y latencia del
--- consumidor.
+-- consumidor. Solo mide lo que llego por Kafka: la precarga no pasa por el
+-- staging y su latencia es nula.
 -- ---------------------------------------------------------------------
 CREATE VIEW vw_stream_salud_flujo AS
-SELECT
-	(SELECT COUNT(*) FROM stg_evento_encuesta) AS mensajes,
-	(SELECT COUNT(*) FROM stg_evento_encuesta WHERE estado = 'VALIDO') AS validos,
-	(SELECT COUNT(*) FROM stg_evento_encuesta WHERE estado = 'INVALIDO_ESQUEMA') AS invalidos_esquema,
-	(SELECT COUNT(*) FROM stg_evento_encuesta WHERE estado = 'INVALIDO_VALORES') AS invalidos_valores,
-	(SELECT COUNT(*) FROM stg_evento_encuesta WHERE estado = 'INVALIDO_REFERENCIA') AS invalidos_referencia,
-	(SELECT COUNT(*) FROM stg_evento_encuesta WHERE estado = 'DUPLICADO') AS duplicados,
-	(SELECT COUNT(*) FROM stg_evento_encuesta WHERE estado = 'RECIBIDO') AS pendientes,
-	(SELECT ROUND(AVG(latencia_ms)::numeric, 1) FROM fact_evento_encuesta) AS latencia_media_ms,
-	(SELECT ROUND((PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latencia_ms))::numeric, 1)
-	 FROM fact_evento_encuesta) AS latencia_p95_ms,
-	(SELECT COUNT(*) FROM fact_evento_encuesta
-	 WHERE momento_procesado >= now() - INTERVAL '1 minute') AS eventos_ultimo_minuto,
-	(SELECT MAX(procesado_en) FROM stg_evento_encuesta) AS ultimo_procesado;
+WITH estados AS (
+	SELECT
+		COUNT(*) AS mensajes,
+		COUNT(*) FILTER (WHERE estado = 'VALIDO') AS validos,
+		COUNT(*) FILTER (WHERE estado = 'INVALIDO_ESQUEMA') AS invalidos_esquema,
+		COUNT(*) FILTER (WHERE estado = 'INVALIDO_VALORES') AS invalidos_valores,
+		COUNT(*) FILTER (WHERE estado = 'INVALIDO_REFERENCIA') AS invalidos_referencia,
+		COUNT(*) FILTER (WHERE estado = 'DUPLICADO') AS duplicados,
+		COUNT(*) FILTER (WHERE estado = 'RECIBIDO') AS pendientes,
+		MAX(procesado_en) AS ultimo_procesado
+	FROM stg_evento_encuesta
+),
+latencia AS (
+	SELECT
+		ROUND(AVG(latencia_ms)::numeric, 1) AS latencia_media_ms,
+		ROUND((PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latencia_ms))::numeric, 1) AS latencia_p95_ms,
+		COUNT(*) FILTER (WHERE momento_procesado >= now() - INTERVAL '1 minute') AS eventos_ultimo_minuto
+	FROM fact_evento_encuesta
+	WHERE origen = 'kafka'
+)
+SELECT e.mensajes, e.validos, e.invalidos_esquema, e.invalidos_valores, e.invalidos_referencia, e.duplicados,
+	e.pendientes, l.latencia_media_ms, l.latencia_p95_ms, l.eventos_ultimo_minuto, e.ultimo_procesado
+FROM estados e CROSS JOIN latencia l;

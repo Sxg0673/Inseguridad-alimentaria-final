@@ -305,10 +305,13 @@ CREATE TABLE IF NOT EXISTS stg_evento_encuesta (
 -- Sin dimension de tiempo: las metricas se miden en segundos y minutos,
 -- sin jerarquia de calendario; el tiempo va como atributo del hecho.
 -- Probabilidades nulas si y solo si la severidad es "Sin dato" (C12).
+-- origen: 'kafka' (llego por el topic y paso por el staging) o 'precarga'
+-- (encuestas ya recibidas antes de iniciar la demo, copiadas del DW por
+-- streaming/precargar.py: sin mensaje de Kafka, sin staging ni latencia).
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS fact_evento_encuesta (
     id_evento_encuesta      BIGSERIAL,
-    id_evento_crudo         BIGINT NOT NULL,
+    id_evento_crudo         BIGINT,
     id_evento               UUID NOT NULL,
     directorio              VARCHAR(10) NOT NULL,
     orden                   VARCHAR(2) NOT NULL,
@@ -319,8 +322,12 @@ CREATE TABLE IF NOT EXISTS fact_evento_encuesta (
     prob_ia_grave           DECIMAL(12, 9),
     momento_evento          TIMESTAMPTZ NOT NULL,
     momento_procesado       TIMESTAMPTZ NOT NULL,
-    latencia_ms             INTEGER NOT NULL,
+    latencia_ms             INTEGER,
+    origen                  VARCHAR(10) NOT NULL DEFAULT 'kafka',
     CONSTRAINT pk_fact_evento_encuesta PRIMARY KEY (id_evento_encuesta),
+    CONSTRAINT ck_evento_origen CHECK (
+        (origen = 'kafka' AND id_evento_crudo IS NOT NULL AND latencia_ms IS NOT NULL)
+        OR (origen = 'precarga' AND id_evento_crudo IS NULL AND latencia_ms IS NULL)),
     CONSTRAINT uq_evento_crudo UNIQUE (id_evento_crudo),
     CONSTRAINT uq_evento_id UNIQUE (id_evento),
     CONSTRAINT uq_evento_hogar UNIQUE (directorio, orden),
@@ -331,6 +338,12 @@ CREATE TABLE IF NOT EXISTS fact_evento_encuesta (
     CONSTRAINT fk_evento_severidad
         FOREIGN KEY (id_nivel_severidad_ia) REFERENCES dim_nivel_severidad_ia (id_nivel_severidad_ia)
 );
+
+-- Las vistas del dashboard (cada 2 s) solo recorren lo que llego por Kafka:
+-- la precarga puede ser ~78.000 filas y recorrerla en cada refresco frenaba
+-- al consumidor (medido en Docker).
+CREATE INDEX IF NOT EXISTS ix_evento_kafka_procesado
+    ON fact_evento_encuesta (momento_procesado) WHERE origen = 'kafka';
 
 -- ---------------------------------------------------------------------
 -- FACT_METRICA_DEPARTAMENTO_STREAM (snapshot acumulado)

@@ -64,8 +64,10 @@ def panel():
     k1, k2, k3, k4 = st.columns(4)
     k1.metric('Hogares recibidos (RS1)', f"{int(nacional['hogares_recibidos']):,}",
               help='Hogares válidos procesados frente a la muestra total del DW')
+    precargados = int(nacional['hogares_precargados'])
     k1.progress(min(float(nacional['avance_pct'] or 0) / 100, 1.0),
-                text=f"Avance {_numero(nacional['avance_pct'], sufijo=' %')} de {int(nacional['hogares_esperados']):,}")
+                text=f"Avance {_numero(nacional['avance_pct'], sufijo=' %')} de {int(nacional['hogares_esperados']):,}"
+                     + (f' ({precargados:,} ya recibidos al iniciar)' if precargados else ''))
     prevalencia = nacional['prevalencia_moderada_grave_pct']
     referencia = nacional['referencia_nacional_pct']
     k2.metric('Prevalencia acumulada (RS2)', _numero(prevalencia, sufijo=' %'),
@@ -89,7 +91,7 @@ def panel():
         st.subheader('Prevalencia acumulada en el tiempo')
         evolucion = datos['evolucion']
         if evolucion.empty:
-            st.info('Aún no llegan encuestas. Arrancar el consumidor y el productor.')
+            st.info('Aún no llegan encuestas por Kafka. Arrancar el consumidor y el productor.')
         else:
             linea = alt.Chart(evolucion).mark_line(point=True).encode(
                 x=alt.X('intervalo:T', title='Hora de procesamiento (intervalos de 10 s)'),
