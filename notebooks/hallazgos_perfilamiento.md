@@ -1,11 +1,12 @@
-# Hallazgos del perfilamiento — Segunda Entrega
+# Hallazgos del perfilamiento — EVA e integración departamental
 
 Hallazgos verificados con código sobre los datos completos. Cada cifra sale de un notebook ejecutado; la sección del notebook se indica entre corchetes.
 
 | Notebook | Fuente | Alcance |
 |---|---|---|
+| [`00_profiling_ecv_hogares.ipynb`](00_profiling_ecv_hogares.ipynb) | ECV 2025 (DANE), tres tablas a nivel hogar | Perfil de la Primera Entrega. Sus hallazgos están en [`hallazgos_perfilamiento_hogares.md`](hallazgos_perfilamiento_hogares.md). |
 | [`01_profiling_eva.ipynb`](01_profiling_eva.ipynb) | API EVA (UPRA), años 2024 y 2025 | Perfil completo de la nueva fuente. |
-| [`02_profiling_ecv_departamental.ipynb`](02_profiling_ecv_departamental.ipynb) | ECV 2025 (DANE) | Lo que la integración departamental necesita. El perfil a nivel hogar está en la Primera Entrega. |
+| [`02_profiling_ecv_departamental.ipynb`](02_profiling_ecv_departamental.ipynb) | ECV 2025 (DANE) | Lo que la integración departamental necesita. El perfil a nivel hogar está en el notebook 00. |
 
 Regla seguida: **observar sin limpiar**. Ningún dato se modificó; las conversiones se hicieron sobre copias.
 
