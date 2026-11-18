@@ -28,7 +28,7 @@ flowchart LR
 | `validate_prepared` | `validar_preparados` (compuerta 3) |
 | `load_dimensional_dw` | `cargar` |
 
-Configuración: `schedule=None` (ejecución manual), `catchup=False`, `max_active_runs=1`, `retries=0` por defecto y `execution_timeout` de 30 min por tarea. Parámetro `falla_controlada` (falso por defecto) para el test B.
+Configuración: `schedule='@weekly'` (semanal: la UPRA puede revisar las cifras de EVA de los dos últimos años; la ECV es anual), `catchup=False` (si Airflow estuvo apagado, solo corre la semana más reciente; no recupera las anteriores), `max_active_runs=1`, `retries=0` por defecto y `execution_timeout` de 30 min por tarea. Parámetro `falla_controlada` (falso por defecto) para el test B.
 
 ## 2. El lote
 

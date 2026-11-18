@@ -17,6 +17,11 @@ Dos ramas independientes que convergen cuando ambas compuertas crudas pasan:
   en AirflowFailException y nunca se reintenta.
 - Parametro falla_controlada: activa el test B (duplica un registro de la API;
   la compuerta 2 detiene el pipeline por la regla C7).
+- Programacion semanal (@weekly): la UPRA advierte que las cifras de EVA de los
+  dos ultimos anios pueden revisarse, asi que la extraccion se repite cada semana.
+  La ECV es anual y se congela igual en cada lote. catchup=False: si Airflow
+  estuvo apagado no se recuperan las semanas perdidas, solo corre la mas reciente.
+  Tambien se puede disparar a mano en cualquier momento.
 
 Los modulos de src/ se importan dentro de cada tarea para que el procesador de
 DAGs no cargue pandas ni Great Expectations en cada lectura del archivo.
@@ -47,7 +52,7 @@ def _ejecutar(funcion, *args, **kwargs):
     dag_id='inseguridad_alimentaria_etl',
     description='ECV 2025 + API EVA -> compuertas Great Expectations -> modelo dimensional en PostgreSQL',
     start_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-    schedule=None,
+    schedule='@weekly',
     catchup=False,
     max_active_runs=1,
     default_args={'owner': 'etl', 'retries': 0, 'execution_timeout': timedelta(minutes=30)},

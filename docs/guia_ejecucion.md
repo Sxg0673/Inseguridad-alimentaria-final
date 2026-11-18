@@ -87,12 +87,14 @@ Interfaz de Airflow: <http://localhost:8081> (usuario y clave del `.env`, por de
 
 ### 2.2 Corrida normal
 
-En la interfaz: activar el DAG `inseguridad_alimentaria_etl` y dispararlo (*Trigger*). O por consola:
+El DAG `inseguridad_alimentaria_etl` está programado cada semana y queda pausado al crearse. En la interfaz, activarlo (interruptor del DAG): Airflow lanza de inmediato la corrida de la semana más reciente. O por consola:
 
 ```powershell
 docker compose exec airflow-scheduler airflow dags unpause inseguridad_alimentaria_etl
-docker compose exec airflow-scheduler airflow dags trigger inseguridad_alimentaria_etl
+docker compose exec airflow-scheduler airflow dags list-runs inseguridad_alimentaria_etl
 ```
+
+Para corridas adicionales (pasos 2.4 y 2.5): botón *Trigger* o `docker compose exec airflow-scheduler airflow dags trigger inseguridad_alimentaria_etl`.
 
 **Esperado:** las 12 tareas en `success` en unos 2-3 minutos. La compuerta 3 termina `aprobada_con_advertencias` por la advertencia A3 (Guaviare con baja cobertura agrícola).
 

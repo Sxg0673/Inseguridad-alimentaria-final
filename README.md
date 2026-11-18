@@ -8,7 +8,6 @@ Entrega final del proyecto ETL: integración de la ECV 2025 del DANE y las Evalu
 
 **Pendientes generales (además de las notas de cada sección):**
 
-- [ ] Programación periódica del DAG (hoy `schedule=None`; el enunciado pide extracción periódica). Propuesta: semanal, porque la UPRA puede revisar las cifras de 2024-2025.
 - [ ] Versionar en `docs/evidencia/` los reportes de las compuertas y el `carga.json` de una corrida real (hoy quedan en `data/batches/`, que no se versiona).
 - [ ] Traer al repositorio el perfil a nivel hogar de la Primera Entrega (`notebooks/data_profiling.ipynb` y sus hallazgos): el EDA debe cubrir todas las fuentes.
 - [ ] Tomar las capturas de la [guía de ejecución](docs/guia_ejecucion.md) (marcas 📸) y guardarlas en `docs/evidencia/`.
@@ -71,7 +70,7 @@ flowchart TB
 
 ## 4. Pipeline ETL batch
 
-> **Pendiente.** Estructura del DAG, interfaces de tareas, reintentos y ejecución: [`docs/orquestacion.md`](docs/orquestacion.md) y E2 §11, §12, §16 y §17 (incluye los diagramas Mermaid del DAG). Falta: actualizar la programación cuando se defina (ver pendientes generales).
+> **Pendiente.** Estructura del DAG, interfaces de tareas, reintentos y ejecución: [`docs/orquestacion.md`](docs/orquestacion.md) y E2 §11, §12, §16 y §17 (incluye los diagramas Mermaid del DAG). Falta: describir la programación semanal (`@weekly`, `catchup=False`) y su motivo: la UPRA puede revisar las cifras de EVA de 2024-2025, y la ECV es anual (ver el docstring de [`dags/etl_dag.py`](dags/etl_dag.py)).
 
 ## 5. Calidad de datos
 
