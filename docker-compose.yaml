@@ -106,6 +106,83 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------
+  # Streaming (perfil "streaming"): Kafka en modo KRaft (sin ZooKeeper),
+  # un solo nodo que hace de broker y controlador. No arranca con un
+  # "docker compose up -d" normal; para la demo de streaming:
+  #   docker compose --profile streaming up -d warehouse kafka kafka-init
+  # El productor, el consumidor y Streamlit corren en el venv del equipo
+  # y se conectan a Kafka por 127.0.0.1:9092 y al warehouse por 127.0.0.1:5434.
+  # ---------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:3.9.1
+    profiles:
+      - streaming
+    ports:
+      # Solo accesible desde este equipo. Se anuncia como 127.0.0.1 (no
+      # "localhost") porque Docker publica el puerto solo en IPv4: con
+      # "localhost" el cliente prueba primero IPv6 y llena el registro de errores.
+      - "127.0.0.1:9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # Datos en el volumen: sin esta linea la imagen guarda en /tmp del
+      # contenedor y el topic y los offsets se pierden al recrearlo.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # Un solo broker: todo se replica una vez.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # El topic lo crea kafka-init con su configuracion: si un cliente
+      # escribiera mal el nombre, fallaria en lugar de crear otro topic.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Memoria acotada para equipos con poca RAM.
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+    mem_limit: 1g
+    stop_grace_period: 30s
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      # Solo comprueba que el puerto acepta conexiones. No usar los scripts
+      # kafka-*.sh: cada uno arranca una JVM y repetirlo cada 10 s satura
+      # equipos con poca CPU.
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  # Crea el topic y termina (idempotente). Comparte la red del broker para
+  # que la direccion que este anuncia (127.0.0.1:9092) funcione tambien aqui.
+  kafka-init:
+    image: apache/kafka:3.9.1
+    profiles:
+      - streaming
+    network_mode: "service:kafka"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx128m"
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-encuestas-hogares}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092
+        --create --if-not-exists --topic "$$KAFKA_TOPIC"
+        --partitions 3 --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092
+        --describe --topic "$$KAFKA_TOPIC"
+    restart: "no"
+
   postgres:
     image: postgres:16
     environment:
@@ -227,3 +304,4 @@ services:
 volumes:
   postgres-db-volume:
   warehouse-db-volume:
+  kafka-data:
