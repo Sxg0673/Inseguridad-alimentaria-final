@@ -101,9 +101,9 @@ def test_consumidor_se_detiene_si_kafka_no_responde():
     class ConsumidorSinBroker(ConsumidorEnMemoria):
         broker_caido = True
 
-        def poll(self, _espera=None):
-            reloj['t'] += 1.0  # cada poll vacio tarda 1 s
-            return None
+        def consume(self, num_messages=1, timeout=None):
+            reloj['t'] += 1.0  # cada consume vacio tarda 1 s
+            return []
 
     parada = procesamiento.Parada()
     consumidor = ConsumidorSinBroker(BrokerEnMemoria('encuestas-hogares'), 'g', parada)
@@ -119,11 +119,11 @@ def test_consumidor_sigue_si_kafka_responde():
     reloj = {'t': 0.0}
 
     class ConsumidorOcioso(ConsumidorEnMemoria):
-        def poll(self, _espera=None):
+        def consume(self, num_messages=1, timeout=None):
             reloj['t'] += 1.0
             if reloj['t'] > 120:
                 self.parada.pedir()
-            return None
+            return []
 
     parada = procesamiento.Parada()
     consumidor = ConsumidorOcioso(BrokerEnMemoria('encuestas-hogares'), 'g', parada)

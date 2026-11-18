@@ -147,10 +147,10 @@ def publicar(broker, hogares, con_invalidos=False):
     return plan
 
 
-def consumir_todo(conexion, broker, **kwargs):
+def consumir_todo(conexion, broker, tamano_lote=200, **kwargs):
     parada = Parada()
     consumidor = ConsumidorEnMemoria(broker, GRUPO, parada, **kwargs)
-    return consumir(consumidor, conexion, TOPIC, parada, tiempo_inactivo=0.05)
+    return consumir(consumidor, conexion, TOPIC, parada, tiempo_inactivo=0.05, tamano_lote=tamano_lote)
 
 
 def una_fila(conexion, consulta):
@@ -257,49 +257,62 @@ def test_consumidor_detenido_retoma_sin_perdidas_ni_duplicados(base):
 
 
 def test_corte_entre_la_base_y_kafka_no_duplica(base):
-    """La base confirmo el mensaje pero el offset no llego a Kafka: se reentrega y se omite."""
+    """La base confirmo el lote pero los offsets no llegaron a Kafka: se reentrega y se omite."""
     poblar_dw(base)
     broker = BrokerEnMemoria(TOPIC)
     publicar(broker, fuente.ordenar_para_envio(fuente.leer_hogares(base), 42, limite=50))
 
     class CaeAlConfirmar(ConsumidorEnMemoria):
         def commit(self, message=None, asynchronous=False):
-            if self.entregados == 20:
+            if self.entregados == 20:          # tras el segundo lote de 10
                 raise RuntimeError('el proceso murio antes de confirmar el offset')
             super().commit(message=message)
 
     parada = Parada()
     with pytest.raises(RuntimeError):
-        consumir(CaeAlConfirmar(broker, GRUPO, parada), base, TOPIC, parada, tiempo_inactivo=0.05)
+        consumir(CaeAlConfirmar(broker, GRUPO, parada), base, TOPIC, parada, tiempo_inactivo=0.05, tamano_lote=10)
     conteos = consumir_todo(base, broker)
-    assert conteos[YA_PROCESADO] == 1
+    assert conteos[YA_PROCESADO] == 10        # el lote ya guardado se reentrega y se omite
     assert una_fila(base, 'SELECT count(*) AS n FROM fact_evento_encuesta')['n'] == 50
     assert una_fila(base, 'SELECT hogares_recibidos FROM vw_stream_nacional')['hogares_recibidos'] == 50
 
 
-def test_falla_de_la_base_a_mitad_de_un_mensaje_revierte_todo(base, monkeypatch):
+def test_falla_de_la_base_a_mitad_de_un_lote_revierte_todo(base, monkeypatch):
     psycopg2 = pytest.importorskip('psycopg2')
     poblar_dw(base)
     broker = BrokerEnMemoria(TOPIC)
     publicar(broker, fuente.ordenar_para_envio(fuente.leer_hogares(base), 42, limite=40))
-    original = almacenamiento.guardar_evento_valido
+    original = almacenamiento.guardar_hechos
     llamadas = {'n': 0}
 
-    def falla_en_la_decima(*args, **kwargs):
+    def falla_en_el_tercer_lote(*args, **kwargs):
         llamadas['n'] += 1
-        if llamadas['n'] == 10:
+        if llamadas['n'] == 3:
             raise psycopg2.OperationalError('conexion perdida con el warehouse')
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(almacenamiento, 'guardar_evento_valido', falla_en_la_decima)
+    monkeypatch.setattr(almacenamiento, 'guardar_hechos', falla_en_el_tercer_lote)
     with pytest.raises(psycopg2.OperationalError):
-        consumir_todo(base, broker)
-    # el mensaje que fallo no dejo rastro (ni staging ni hecho): se revirtio completo
-    assert una_fila(base, 'SELECT count(*) AS n FROM stg_evento_encuesta')['n'] == 9
-    monkeypatch.setattr(almacenamiento, 'guardar_evento_valido', original)
+        consumir_todo(base, broker, tamano_lote=4)
+    # lotes de 4: los dos primeros (8 mensajes) quedaron; el tercero, donde fallo la base,
+    # se revirtio completo (ni staging ni hecho)
+    assert una_fila(base, 'SELECT count(*) AS n FROM stg_evento_encuesta')['n'] == 8
+    assert una_fila(base, 'SELECT count(*) AS n FROM fact_evento_encuesta')['n'] == 8
+    monkeypatch.setattr(almacenamiento, 'guardar_hechos', original)
     consumir_todo(base, broker)
     assert una_fila(base, 'SELECT count(*) AS n FROM fact_evento_encuesta')['n'] == 40
     assert una_fila(base, "SELECT count(*) AS n FROM stg_evento_encuesta WHERE estado = 'VALIDO'")['n'] == 40
+
+
+def test_duplicado_dentro_del_mismo_lote(base):
+    """Dos llegadas del mismo hogar en un lote: la primera es VALIDO y la segunda DUPLICADO."""
+    poblar_dw(base)
+    broker = BrokerEnMemoria(TOPIC)
+    hogares = fuente.ordenar_para_envio(fuente.leer_hogares(base), 42, limite=5)
+    publicar(broker, hogares + [hogares[0]])          # mismo hogar, otro id_evento
+    conteos = consumir_todo(base, broker, tamano_lote=50)
+    assert conteos == {c.VALIDO: 5, c.DUPLICADO: 1}
+    assert una_fila(base, 'SELECT hogares_recibidos FROM vw_stream_nacional')['hogares_recibidos'] == 5
 
 
 def test_una_nueva_carga_del_dw_reinicia_el_streaming(base):
@@ -348,3 +361,68 @@ def test_dashboard_muestra_las_metricas_del_streaming(base):
     assert metricas['Departamentos en alerta (RS3)'] == str(nacional['departamentos_en_alerta'])
     assert metricas['Mensajes inválidos (RS4)'] == '6 de 406'
     assert len(app.dataframe) == 1 and len(app.dataframe[0].value) == 33
+
+
+# ---------------------------------------------------------------------------
+# Demo recortada: precarga + productor --pendientes
+# ---------------------------------------------------------------------------
+def test_precarga_mas_pendientes_llega_a_la_referencia_del_dw(base):
+    total = poblar_dw(base)
+    broker = BrokerEnMemoria(TOPIC)
+    precargar = _cargar_script('precargar')
+    productor = _cargar_script('productor')
+    consumidor = _cargar_script('consumidor')
+
+    assert precargar.main(['--porcentaje', '80']) == 0
+    precargados = round(total * 0.8)
+    estado = una_fila(base, """SELECT count(*) AS hechos, count(*) FILTER (WHERE origen = 'precarga') AS precarga,
+                                      count(id_evento_crudo) AS con_crudo, count(latencia_ms) AS con_latencia,
+                                      (SELECT count(*) FROM stg_evento_encuesta) AS staging,
+                                      (SELECT sum(hogares_recibidos) FROM fact_metrica_departamento_stream) AS snapshot
+                               FROM fact_evento_encuesta""")
+    assert estado == {'hechos': precargados, 'precarga': precargados, 'con_crudo': 0, 'con_latencia': 0,
+                      'staging': 0, 'snapshot': precargados}
+    assert una_fila(base, 'SELECT hogares_precargados FROM vw_stream_nacional')['hogares_precargados'] == precargados
+
+    # el productor publica solo los que faltan, y el consumidor los procesa
+    assert productor.main(['--pendientes', '--eventos-por-segundo', '1000'],
+                          crear=lambda _s: ProductorEnMemoria(broker)) == 0
+    assert len(broker.mensajes()) == total - precargados
+    assert consumidor.main(['--tiempo-inactivo', '0.2'], instalar_senales=False,
+                           crear=lambda _s, grupo, _e: ConsumidorEnMemoria(broker, grupo)) == 0
+
+    nacional = una_fila(base, 'SELECT * FROM vw_stream_nacional')
+    assert nacional['hogares_recibidos'] == nacional['hogares_esperados'] == total
+    assert nacional['prevalencia_moderada_grave_pct'] == nacional['referencia_nacional_pct']
+    salud = una_fila(base, 'SELECT * FROM vw_stream_salud_flujo')
+    assert salud['mensajes'] == salud['validos'] == total - precargados   # la salud solo mide Kafka
+    # la curva parte de la linea base de la precarga y termina en la prevalencia acumulada final
+    ultimo = filas(base, 'SELECT * FROM vw_stream_evolucion ORDER BY intervalo')[-1]
+    assert ultimo['hogares_acumulados'] == total
+    assert ultimo['prevalencia_acumulada_pct'] == nacional['prevalencia_moderada_grave_pct']
+    assert una_fila(base, 'SELECT count(DISTINCT (directorio, orden)) AS n FROM fact_evento_encuesta')['n'] == total
+
+    # sin pendientes, el productor no publica nada
+    assert productor.main(['--pendientes'], crear=lambda _s: ProductorEnMemoria(broker)) == 0
+    assert len(broker.mensajes()) == total - precargados
+
+
+def test_precarga_exige_la_demo_en_cero(base):
+    poblar_dw(base)
+    precargar = _cargar_script('precargar')
+    assert precargar.main(['--porcentaje', '50']) == 0
+    antes = una_fila(base, 'SELECT count(*) AS n FROM fact_evento_encuesta')['n']
+    assert precargar.main(['--porcentaje', '50']) == 1
+    assert una_fila(base, 'SELECT count(*) AS n FROM fact_evento_encuesta')['n'] == antes
+
+
+def test_el_hecho_exige_staging_y_latencia_solo_para_kafka(base):
+    psycopg2 = pytest.importorskip('psycopg2')
+    poblar_dw(base)
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        with base.cursor() as cursor:
+            cursor.execute("""INSERT INTO fact_evento_encuesta (id_evento, directorio, orden, id_geografia,
+                              id_nivel_severidad_ia, factor_expansion, momento_evento, momento_procesado, origen)
+                              SELECT gen_random_uuid(), '1', '1', id_geografia, id_nivel_severidad_ia, 1, now(), now(),
+                                     'kafka' FROM fact_seguridad_alimentaria_hogar LIMIT 1""")
+    base.rollback()

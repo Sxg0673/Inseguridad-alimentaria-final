@@ -127,8 +127,23 @@ class ConsumidorEnMemoria:
                 return mensaje
         return None
 
+    def consume(self, num_messages=1, timeout=None):
+        """Hasta num_messages mensajes (lo que haya), como Consumer.consume."""
+        lote = []
+        while len(lote) < num_messages:
+            mensaje = self.poll()
+            if mensaje is None:
+                break
+            lote.append(mensaje)
+        return lote
+
     def commit(self, message=None, asynchronous=False):
-        self.broker.confirmados[(self.grupo, message.partition())] = message.offset() + 1
+        """Sin message confirma la posicion actual de todas las particiones (lo ya entregado)."""
+        if message is not None:
+            self.broker.confirmados[(self.grupo, message.partition())] = message.offset() + 1
+            return
+        for numero, posicion in self.posicion.items():
+            self.broker.confirmados[(self.grupo, numero)] = posicion
 
     def list_topics(self, topic=None, timeout=None):
         """Sondeo del broker. Con broker_caido=True simula un Kafka que no responde."""

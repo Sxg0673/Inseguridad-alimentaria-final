@@ -1,8 +1,9 @@
 """Consumidor de Kafka: valida cada encuesta y actualiza el modelo y las metricas del streaming.
 
 Por cada mensaje del topic encuestas-hogares (grupo consumidor-encuestas):
-staging -> contrato -> referencias en las dimensiones -> hecho -> snapshot,
-en una transaccion; despues confirma el offset (src/streaming/procesamiento.py).
+staging -> contrato -> referencias en las dimensiones -> hecho -> snapshot.
+Procesa micro-lotes (hasta 200 mensajes) en una transaccion y despues confirma
+sus offsets (src/streaming/procesamiento.py).
 
 Uso (con el DW cargado y Kafka arriba):
     python streaming/consumidor.py                        escucha hasta Ctrl+C

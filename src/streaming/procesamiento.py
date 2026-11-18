@@ -1,18 +1,27 @@
 """
-Logica del consumidor: procesar un mensaje y ciclo de consumo.
+Logica del consumidor: procesar mensajes en micro-lotes y ciclo de consumo.
 
-Por cada mensaje del topic, en UNA transaccion de la base:
+Por cada mensaje del topic:
   1. Guarda el mensaje tal como llego en stg_evento_encuesta (antes de validar).
   2. Valida esquema y valores con el contrato -> INVALIDO_ESQUEMA / INVALIDO_VALORES.
   3. Resuelve las FK por clave natural en las dimensiones -> INVALIDO_REFERENCIA.
   4. Inserta en fact_evento_encuesta; si el hogar ya estaba -> DUPLICADO.
   5. Actualiza fact_metrica_departamento_stream y marca el crudo como VALIDO.
-Despues del commit de la base, confirma el offset en Kafka (asincrono).
 
-Un evento malo nunca detiene el consumidor: queda guardado con su estado y
-motivo. Una falla de infraestructura (Kafka o PostgreSQL) si lo detiene; al
-reiniciarlo, Kafka reentrega desde el ultimo offset confirmado y la base
-(UNIQUE de topic, particion y desplazamiento) evita duplicados.
+Micro-lotes: los mensajes que entrega Kafka de una vez (hasta TAMANO_LOTE) se
+procesan en UNA transaccion de la base y, despues del commit, se confirman sus
+offsets en Kafka (asincrono). Con una transaccion por mensaje, cada commit
+esperaba la escritura en disco y el consumidor no pasaba de ~40-90 eventos/s
+en Docker para Mac (medido); por lote, ese costo se paga una vez cada N mensajes.
+
+Garantias (las mismas que mensaje por mensaje):
+- Un evento malo nunca detiene el consumidor: queda guardado con su estado y
+  motivo dentro del lote.
+- Una falla de infraestructura (Kafka o PostgreSQL) revierte el lote completo
+  y detiene el consumidor sin confirmar offsets; al reiniciarlo Kafka reentrega
+  el lote y se procesa entero.
+- Si el lote quedo en la base pero el offset no llego a Kafka, la reentrega se
+  omite (UNIQUE de topic, particion y desplazamiento -> YA_PROCESADO).
 """
 import logging
 import time
@@ -38,52 +47,74 @@ SONDEO_BROKER_S = 10
 LIMITE_SIN_BROKER_S = 30
 ESPERA_SONDEO_S = 5
 
+# Mensajes por transaccion. 200 a ~100 eventos/s es ~2 s en el peor caso; si
+# llegan menos, el lote es lo que haya en ese momento (no se espera a llenarlo).
+TAMANO_LOTE = 200
 
-def procesar_mensaje(conexion, mensaje, ahora=lambda: datetime.now(timezone.utc)) -> str:
-    """Procesa un mensaje de punta a punta en una transaccion. Devuelve el estado final.
 
-    Las excepciones de la base se dejan pasar: son fallas de infraestructura,
-    deben detener el consumidor y el offset no se confirma.
+def procesar_lote(conexion, mensajes, ahora=lambda: datetime.now(timezone.utc)) -> list[str]:
+    """Procesa un micro-lote en UNA transaccion. Devuelve el estado final de cada mensaje, en orden.
+
+    La validacion es mensaje por mensaje (contrato y referencias); las
+    escrituras se hacen en bloque (src/streaming/almacenamiento.py). Si la base
+    falla, se revierte el lote entero y la excepcion sube: el consumidor se
+    detiene sin confirmar offsets.
     """
-    donde = f'[p{mensaje.partition()} o{mensaje.offset()}]'
     try:
         with conexion.cursor() as cursor:
-            id_crudo, ya_procesado = almacenamiento.guardar_crudo(
-                cursor, mensaje.topic(), mensaje.partition(), mensaje.offset(), mensaje.key(), mensaje.value())
-            if ya_procesado:
-                conexion.commit()
-                log.info('%s reentrega de un mensaje ya procesado: se omite', donde)
-                return YA_PROCESADO
+            crudos = almacenamiento.guardar_crudos(cursor, mensajes)
+            dimensiones = almacenamiento.leer_dimensiones(cursor)
+            estados = {}      # posicion en el lote -> (estado, motivo)
+            validos = []      # (posicion, id_crudo, evento, referencias)
+            for posicion, mensaje in enumerate(mensajes):
+                id_crudo, ya_procesado = crudos[(mensaje.topic(), mensaje.partition(), mensaje.offset())]
+                if ya_procesado:
+                    estados[posicion] = (YA_PROCESADO, None)
+                    continue
+                resultado = c.validar_evento(mensaje.value(), mensaje.key())
+                if not resultado.es_valido:
+                    estados[posicion] = (resultado.estado, resultado.motivo)
+                    continue
+                referencias, errores = almacenamiento.resolver_referencias(dimensiones, resultado.evento)
+                if errores:
+                    estados[posicion] = (c.INVALIDO_REFERENCIA, '; '.join(errores))
+                    continue
+                validos.append((posicion, id_crudo, resultado.evento, referencias))
 
-            resultado = c.validar_evento(mensaje.value(), mensaje.key())
-            if not resultado.es_valido:
-                return _cerrar_invalido(conexion, cursor, id_crudo, resultado.estado, resultado.motivo, donde)
+            insertados = almacenamiento.guardar_hechos(
+                cursor, [(id_crudo, evento, ref) for _, id_crudo, evento, ref in validos], ahora())
+            almacenamiento.actualizar_metricas(
+                cursor, [(evento, ref) for _, id_crudo, evento, ref in validos if id_crudo in insertados])
+            for posicion, id_crudo, evento, _ in validos:
+                if id_crudo in insertados:
+                    estados[posicion] = (c.VALIDO, None)
+                else:
+                    estados[posicion] = (c.DUPLICADO, f'el hogar ({evento[c.DIRECTORIO]}, {evento[c.ORDEN]}) o el '
+                                                      f'id_evento {evento[c.ID_EVENTO]} ya se habia recibido')
 
-            evento = resultado.evento
-            referencias, errores = almacenamiento.resolver_referencias(cursor, evento)
-            if errores:
-                return _cerrar_invalido(conexion, cursor, id_crudo, c.INVALIDO_REFERENCIA, '; '.join(errores), donde)
-
-            if not almacenamiento.guardar_evento_valido(cursor, id_crudo, evento, referencias, ahora()):
-                motivo = (f'el hogar ({evento[c.DIRECTORIO]}, {evento[c.ORDEN]}) o el id_evento '
-                          f'{evento[c.ID_EVENTO]} ya se habia recibido')
-                return _cerrar_invalido(conexion, cursor, id_crudo, c.DUPLICADO, motivo, donde)
-
-            almacenamiento.marcar(cursor, id_crudo, c.VALIDO)
+            por_marcar = []
+            for posicion, mensaje in enumerate(mensajes):
+                estado, motivo = estados[posicion]
+                if estado == YA_PROCESADO:
+                    log.info('[p%s o%s] reentrega de un mensaje ya procesado: se omite',
+                             mensaje.partition(), mensaje.offset())
+                    continue
+                motivo = motivo[:LARGO_MAXIMO_MOTIVO] if motivo else None
+                if estado != c.VALIDO:
+                    log.warning('[p%s o%s] %s: %s', mensaje.partition(), mensaje.offset(), estado, motivo)
+                por_marcar.append((crudos[(mensaje.topic(), mensaje.partition(), mensaje.offset())][0],
+                                   estado, motivo))
+            almacenamiento.marcar_estados(cursor, por_marcar)
         conexion.commit()
     except Exception:
         conexion.rollback()
         raise
-    log.debug('%s VALIDO %s-%s depto %s', donde, evento[c.DIRECTORIO], evento[c.ORDEN], evento[c.DEPARTAMENTO])
-    return c.VALIDO
+    return [estados[posicion][0] for posicion in range(len(mensajes))]
 
 
-def _cerrar_invalido(conexion, cursor, id_crudo, estado, motivo, donde):
-    motivo = (motivo or '')[:LARGO_MAXIMO_MOTIVO]
-    almacenamiento.marcar(cursor, id_crudo, estado, motivo)
-    conexion.commit()
-    log.warning('%s %s: %s', donde, estado, motivo)
-    return estado
+def procesar_mensaje(conexion, mensaje, ahora=lambda: datetime.now(timezone.utc)) -> str:
+    """Un solo mensaje en su propia transaccion (lote de uno)."""
+    return procesar_lote(conexion, [mensaje], ahora)[0]
 
 
 class Parada:
@@ -108,8 +139,11 @@ def _broker_responde(consumidor, topic):
 
 
 def consumir(consumidor, conexion, topic, parada, tiempo_inactivo=None, conteos=None, errores_broker=None,
-             reloj=time.monotonic, cada=500):
-    """Ciclo principal: recibe, procesa y confirma mensaje por mensaje. Devuelve los conteos por estado."""
+             reloj=time.monotonic, cada=500, tamano_lote=TAMANO_LOTE):
+    """Ciclo principal: recibe un micro-lote, lo procesa en una transaccion y confirma sus offsets.
+
+    Devuelve los conteos por estado.
+    """
     from confluent_kafka import KafkaError, KafkaException
 
     conteos = Counter() if conteos is None else conteos
@@ -125,7 +159,7 @@ def consumir(consumidor, conexion, topic, parada, tiempo_inactivo=None, conteos=
     proximo_sondeo = reloj() + SONDEO_BROKER_S
     sin_broker_desde = None
     while not parada.pedida:
-        mensaje = consumidor.poll(1.0)
+        recibidos = consumidor.consume(num_messages=tamano_lote, timeout=1.0)
         if errores_broker:
             raise RuntimeError(f'Se perdio la conexion con Kafka: {errores_broker[0]}')
         if reloj() >= proximo_sondeo:
@@ -138,7 +172,19 @@ def consumir(consumidor, conexion, topic, parada, tiempo_inactivo=None, conteos=
                 if reloj() - sin_broker_desde >= LIMITE_SIN_BROKER_S:
                     raise RuntimeError(f'Kafka no responde hace {LIMITE_SIN_BROKER_S} s o mas: se detiene el '
                                        'consumidor. Al volver a arrancarlo retoma desde el ultimo offset confirmado.')
-        if mensaje is None:
+        mensajes = []
+        for mensaje in recibidos:
+            error = mensaje.error()
+            if error is None:
+                mensajes.append(mensaje)
+            elif error.code() == KafkaError._PARTITION_EOF:
+                continue
+            elif error.code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
+                raise RuntimeError(f"El topic '{topic}' no existe. Lo crea el servicio kafka-init o "
+                                   'python streaming/reiniciar_demo.py.')
+            else:
+                raise KafkaException(error)
+        if not mensajes:
             if not asignadas:
                 # Sin particiones aun: Kafka puede tardar si el consumidor anterior murio
                 # de golpe. El reloj de inactividad no corre todavia.
@@ -148,23 +194,13 @@ def consumir(consumidor, conexion, topic, parada, tiempo_inactivo=None, conteos=
                 log.info('Sin mensajes nuevos en %s s: se termina', tiempo_inactivo)
                 break
             continue
-        error = mensaje.error()
-        if error is not None:
-            if error.code() == KafkaError._PARTITION_EOF:
-                continue
-            if error.code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                raise RuntimeError(f"El topic '{topic}' no existe. Lo crea el servicio kafka-init o "
-                                   'python streaming/reiniciar_demo.py.')
-            raise KafkaException(error)
-        conteos[procesar_mensaje(conexion, mensaje)] += 1
-        # Solo ahora, con todo guardado en la base, se confirma el offset en Kafka.
-        # Asincrono: no espera la respuesta del broker en cada mensaje (en el Mac de
-        # pruebas, la confirmacion sincrona limitaba el consumidor a ~70 eventos/s).
-        # Si el proceso cae antes de que llegue la confirmacion, Kafka reentrega esos
-        # mensajes y la base los omite (UNIQUE de topic, particion y desplazamiento).
-        consumidor.commit(message=mensaje, asynchronous=True)
+        conteos.update(procesar_lote(conexion, mensajes))
+        # Solo ahora, con el lote guardado en la base, se confirman sus offsets en Kafka.
+        # Asincrono: no espera la respuesta del broker. Si el proceso cae antes de que
+        # llegue, Kafka reentrega el lote y la base lo omite (YA_PROCESADO).
+        consumidor.commit(asynchronous=True)
         ultima_actividad = reloj()
-        procesados += 1
-        if procesados % cada == 0:
+        anteriores, procesados = procesados, procesados + len(mensajes)
+        if procesados // cada > anteriores // cada:
             log.info('%s mensajes atendidos: %s', procesados, dict(conteos))
     return conteos
