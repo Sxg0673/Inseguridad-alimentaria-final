@@ -133,6 +133,9 @@ def poblar_dw(conexion, hogares_por_depto=60, semilla=7):
                     'INSERT INTO fact_seguridad_alimentaria_hogar VALUES (%s,%s,%s,%s,1,%s,1,1,true,true,%s,%s,%s)',
                     (id_hogar, f'{7000000 + id_hogar}', '1', geografia[(codigo, azar.choice('12'))],
                      SEVERIDADES[severidad], round(azar.uniform(50, 900), 6), mg, g))
+        # Como en la carga real: las vistas materializadas se calculan con el DW ya cargado
+        cursor.execute('REFRESH MATERIALIZED VIEW mv_stream_referencia_nacional')
+        cursor.execute('REFRESH MATERIALIZED VIEW mv_stream_esperados_departamento')
     conexion.commit()
     return id_hogar
 
@@ -328,7 +331,7 @@ def test_dashboard_sin_eventos_no_falla(base):
     app = _correr_dashboard()
     metricas = {m.label: m.value for m in app.metric}
     assert metricas['Hogares recibidos (RS1)'] == '0'
-    assert any('Aun no llegan encuestas' in i.value for i in app.info)
+    assert any('Aún no llegan encuestas' in i.value for i in app.info)
 
 
 def test_dashboard_muestra_las_metricas_del_streaming(base):
@@ -341,7 +344,7 @@ def test_dashboard_muestra_las_metricas_del_streaming(base):
     metricas = {m.label: m.value for m in app.metric}
     assert metricas['Hogares recibidos (RS1)'] == '400'
     prevalencia = f"{nacional['prevalencia_moderada_grave_pct']:,.2f} %"
-    assert metricas['Prevalencia acumulada IA moderada o grave (RS2)'] == prevalencia
+    assert metricas['Prevalencia acumulada (RS2)'] == prevalencia
     assert metricas['Departamentos en alerta (RS3)'] == str(nacional['departamentos_en_alerta'])
-    assert metricas['Mensajes invalidos (RS4)'] == '6 de 406'
+    assert metricas['Mensajes inválidos (RS4)'] == '6 de 406'
     assert len(app.dataframe) == 1 and len(app.dataframe[0].value) == 33

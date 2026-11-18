@@ -42,10 +42,10 @@ def estados_mensajes(salud):
     """Tabla larga de mensajes por estado, para el grafico de salud del flujo (RS4)."""
     fila = salud.iloc[0]
     estados = {
-        'Validos': fila['validos'],
-        'Invalido: esquema': fila['invalidos_esquema'],
-        'Invalido: valores': fila['invalidos_valores'],
-        'Invalido: referencia': fila['invalidos_referencia'],
+        'Válidos': fila['validos'],
+        'Inválido: esquema': fila['invalidos_esquema'],
+        'Inválido: valores': fila['invalidos_valores'],
+        'Inválido: referencia': fila['invalidos_referencia'],
         'Duplicados': fila['duplicados'],
     }
     return pd.DataFrame({'estado': list(estados), 'mensajes': [int(v) for v in estados.values()]})
