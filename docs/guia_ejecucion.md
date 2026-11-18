@@ -116,7 +116,15 @@ docker compose exec warehouse psql -U warehouse -d warehouse -c "SELECT count(*)
 
 **Esperado:** 87.060 hogares; `vw_stream_nacional` con 87.060 hogares esperados, referencia nacional 21,10 y 0 recibidos.
 
-📸 **Capturar:** los tres JSON de las compuertas (al menos sus primeras líneas) y el resultado de las consultas.
+Copiar los reportes al repositorio (`data/batches/` no se versiona):
+
+```powershell
+python scripts/exportar_evidencia.py
+```
+
+**Esperado:** `Evidencia exportada en ...docs/evidencia/corrida (6 archivos)`: los tres JSON de las compuertas, `carga.json`, `lote.json` y un `resumen.md` con el estado de cada compuerta, la advertencia A3 y las filas por tabla. Si algún reporte cambió después de generarse (sha256 distinto al del lote), el script se detiene y no copia nada.
+
+📸 **Capturar:** el `resumen.md` exportado (o los tres JSON de las compuertas) y el resultado de las consultas.
 
 ### 2.4 Falla controlada (bloqueo por calidad)
 
@@ -127,6 +135,15 @@ docker compose exec airflow-scheduler airflow dags trigger inseguridad_alimentar
 ```
 
 **Esperado:** `validar_eva_cruda` en `failed` por la regla crítica **C7** (llave duplicada), todo lo posterior en `upstream_failed` y **`cargar` no se ejecuta**. El warehouse queda como estaba.
+
+Exportar también este lote, que no llegó a la carga (el script elige por defecto el último lote cargado, así que hay que indicar su id):
+
+```powershell
+python scripts/exportar_evidencia.py --listar
+python scripts/exportar_evidencia.py --lote <id del lote con compuerta_2=rechazada> --nombre falla_controlada
+```
+
+**Esperado:** `docs/evidencia/falla_controlada/` sin `carga.json`; su `resumen.md` dice "detenida antes de la carga" y muestra la regla **C7** con los valores inesperados.
 
 📸 **Capturar:** el grafo con la tarea en rojo, el log de `validar_eva_cruda` con la línea `CRITICA C7` y el `compuerta_2.json` con `"estado": "rechazada"`.
 
