@@ -2,11 +2,32 @@
 
 Entrega final del proyecto ETL: integración de la ECV 2025 del DANE y las Evaluaciones Agropecuarias Municipales (EVA) de la UPRA, con procesamiento batch orquestado en Airflow y un componente de streaming con Kafka.
 
-> Documento en construcción.
+> **Documento en construcción.** Las secciones 3, 8, 9 y 10 están completas. Las demás tienen una nota **Pendiente** con lo que falta y de dónde sale el material. Las notas se eliminan al cerrar cada sección.
+>
+> Material base: README de la [Primera Entrega](https://github.com/Sxg0673/etl-inseguridad-alimentaria-colombia/tree/dev) y de la [Segunda Entrega](https://github.com/valedeveloper/inseguridad-alimentaria-2) (las referencias "E2 §N" de las notas son sus secciones), los documentos de [`docs/`](docs) y los hallazgos de [`notebooks/`](notebooks).
+
+**Pendientes generales (además de las notas de cada sección):**
+
+- [ ] Programación periódica del DAG (hoy `schedule=None`; el enunciado pide extracción periódica). Propuesta: semanal, porque la UPRA puede revisar las cifras de 2024-2025.
+- [ ] Versionar en `docs/evidencia/` los reportes de las compuertas y el `carga.json` de una corrida real (hoy quedan en `data/batches/`, que no se versiona).
+- [ ] Traer al repositorio el perfil a nivel hogar de la Primera Entrega (`notebooks/data_profiling.ipynb` y sus hallazgos): el EDA debe cubrir todas las fuentes.
+- [ ] Tomar las capturas de la [guía de ejecución](docs/guia_ejecucion.md) (marcas 📸) y guardarlas en `docs/evidencia/`.
+- [ ] Dashboard histórico en Power BI: archivo `.pbix` (o enlace) en `dashboards/`, capturas e insights.
+- [ ] Corregir [`docs/contexto_problema.png`](docs/contexto_problema.png): atribuye cifras a la ENSIN, pero el proyecto usa la ECV.
+- [ ] Incorporar las observaciones recibidas en la Primera y la Segunda Entrega.
 
 ## 1. Descripción del proyecto y objetivos
 
+> **Pendiente.** Problema, pregunta y objetivos: E2 §1. Estado de R1-R5 y requerimientos integrados R6-R7: E2 §3 y §4. Falta:
+> - Separar los requerimientos **batch** (R1-R7, análisis histórico) de los de **baja latencia** (RS1-RS4, definidos en la sección 8.4) y justificar el streaming (sección 8.1).
+> - Cerrar con una tabla **objetivo → cómo se cumplió → evidencia** (vista, gráfico o métrica), como pide el enunciado.
+
 ## 2. Fuentes de datos y EDA
+
+> **Pendiente.** Fuentes, acceso a la API y su valor analítico: E2 §5 y §6 y [`data/raw/README.md`](data/raw/README.md). Perfilamiento: E2 §8 y [`notebooks/hallazgos_perfilamiento.md`](notebooks/hallazgos_perfilamiento.md) (EVA y ECV departamental). Falta:
+> - El perfil a nivel hogar de la Primera Entrega (ver pendientes generales).
+> - Una tabla **hallazgo del EDA → decisión de limpieza o transformación → regla de calidad**, con los IDs de [`docs/reglas_calidad.md`](docs/reglas_calidad.md) (C1-C16, A1-A3) y las reglas del contrato del streaming (sección 8.2).
+> - Describir la fuente de los eventos del streaming (sección 8.1) como tercera "fuente" del sistema.
 
 ## 3. Arquitectura del sistema
 
@@ -50,11 +71,25 @@ flowchart TB
 
 ## 4. Pipeline ETL batch
 
+> **Pendiente.** Estructura del DAG, interfaces de tareas, reintentos y ejecución: [`docs/orquestacion.md`](docs/orquestacion.md) y E2 §11, §12, §16 y §17 (incluye los diagramas Mermaid del DAG). Falta: actualizar la programación cuando se defina (ver pendientes generales).
+
 ## 5. Calidad de datos
+
+> **Pendiente.** Reglas, severidades, umbrales y su traza a Great Expectations: [`docs/reglas_calidad.md`](docs/reglas_calidad.md) y E2 §9, §10 y §14. Falta:
+> - Resultados de una corrida real (reportes de las compuertas en `docs/evidencia/`).
+> - El comportamiento ante un fallo crítico, con la evidencia de la [guía de ejecución](docs/guia_ejecucion.md), sección 2.4: la tarea falla sin reintentos, todo lo posterior queda en `upstream_failed` y no se carga nada.
+> - Mencionar que el contrato del streaming reutiliza reglas del batch (sección 8.2).
 
 ## 6. Data Warehouse
 
+> **Pendiente.** Modelo dimensional, granos y justificación: E2 §13 y §15, [`docs/modelo_dimensional.dbml`](docs/modelo_dimensional.dbml) y [`sql/create_tables.sql`](sql/create_tables.sql). Falta:
+> - Incluir las tres tablas del streaming (sección 8.4) en el diagrama y en el registro de cambios del modelo.
+> - Estrategia de carga: `TRUNCATE` + `INSERT` en una transacción, conciliación de conteos y recreación de vistas ([`src/carga.py`](src/carga.py)). Las tablas del streaming entran en el mismo `TRUNCATE` porque tienen FK a dimensiones cuyas claves sustitutas se reconstruyen en cada carga: una carga nueva reinicia el streaming.
+> - Vistas: R1-R7 ([`sql/vistas_analiticas.sql`](sql/vistas_analiticas.sql)) y las del streaming ([`sql/vistas_streaming.sql`](sql/vistas_streaming.sql)), incluidas las dos vistas materializadas que se recalculan en cada carga.
+
 ## 7. Dashboard analítico batch
+
+> **Pendiente.** Conexión, vistas y reglas de lectura: [`docs/guia_dashboard.md`](docs/guia_dashboard.md). Lo ya publicado para R6 y R7: E2 §21. Falta el informe completo con R1-R7: archivo o enlace, capturas, KPIs e insights.
 
 ## 8. Pipeline de streaming
 
@@ -209,4 +244,15 @@ Cada experimento se describe, con su resultado esperado, en la [guía de ejecuci
 | Kafka caído | 3.5 |
 | Coherencia streaming = DW | 3.6 |
 
+> **Pendiente.** Insertar aquí las capturas (desde `docs/evidencia/`), cada una con una línea que explique qué demuestra, incluido al menos un experimento de evento inválido o de consumidor detenido.
+
 ## 12. Decisiones de ingeniería y limitaciones
+
+> **Pendiente.** Supuestos y limitaciones del batch: E2 §24. Agregar las del streaming:
+> - Es una re-publicación simulada del DW; la precarga no pasa por Kafka ni por el contrato (son datos que ya aprobaron las compuertas del batch).
+> - La alerta RS3 es un indicador operativo: el intervalo de confianza no considera el diseño muestral de la ECV y trata las probabilidades FIES como proporciones.
+> - Un solo broker de Kafka, sin replicación.
+> - Una carga nueva del DW reinicia el streaming.
+> - Entrega al menos una vez desde Kafka y exactamente una vez en la base, gracias a las restricciones `UNIQUE`.
+>
+> Decisiones que conviene justificar: Kafka en modo KRaft con un perfil de Compose aparte; clientes en un entorno virtual y no en contenedores; micro-lotes con confirmación del offset después del commit de la base; vistas materializadas para que el dashboard no compita con el consumidor; ningún puerto expuesto fuera de `127.0.0.1` y sin credenciales reales en el repositorio.
