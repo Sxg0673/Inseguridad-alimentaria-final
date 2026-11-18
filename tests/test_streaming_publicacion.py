@@ -90,3 +90,42 @@ def test_un_error_de_entrega_detiene_el_envio():
     with pytest.raises(RuntimeError, match='no pudo entregar'):
         enviar(ProductorEnMemoria(broker, fallar_en=4), 'encuestas-hogares', plan, None, estadisticas)
     assert estadisticas.entregados == 3
+
+
+def test_consumidor_se_detiene_si_kafka_no_responde():
+    """Con el broker caido, el consumidor no queda esperando para siempre (hallazgo con Kafka real en Docker)."""
+    from kafka_en_memoria import ConsumidorEnMemoria
+    from src.streaming import procesamiento
+    reloj = {'t': 0.0}
+
+    class ConsumidorSinBroker(ConsumidorEnMemoria):
+        broker_caido = True
+
+        def poll(self, _espera=None):
+            reloj['t'] += 1.0  # cada poll vacio tarda 1 s
+            return None
+
+    parada = procesamiento.Parada()
+    consumidor = ConsumidorSinBroker(BrokerEnMemoria('encuestas-hogares'), 'g', parada)
+    with pytest.raises(RuntimeError, match='Kafka no responde'):
+        procesamiento.consumir(consumidor, None, 'encuestas-hogares', parada, reloj=lambda: reloj['t'])
+    limite = procesamiento.LIMITE_SIN_BROKER_S + 2 * procesamiento.SONDEO_BROKER_S
+    assert reloj['t'] <= limite
+
+
+def test_consumidor_sigue_si_kafka_responde():
+    from kafka_en_memoria import ConsumidorEnMemoria
+    from src.streaming import procesamiento
+    reloj = {'t': 0.0}
+
+    class ConsumidorOcioso(ConsumidorEnMemoria):
+        def poll(self, _espera=None):
+            reloj['t'] += 1.0
+            if reloj['t'] > 120:
+                self.parada.pedir()
+            return None
+
+    parada = procesamiento.Parada()
+    consumidor = ConsumidorOcioso(BrokerEnMemoria('encuestas-hogares'), 'g', parada)
+    procesamiento.consumir(consumidor, None, 'encuestas-hogares', parada, reloj=lambda: reloj['t'])
+    assert reloj['t'] > 120

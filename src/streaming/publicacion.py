@@ -145,4 +145,6 @@ def enviar(productor: Any, topic: str, plan: list[EventoPlaneado], eventos_por_s
             raise RuntimeError(f'Kafka no pudo entregar un evento ({estadisticas.errores[0]}): se detiene el envio')
     pendientes = productor.flush(30)
     if pendientes or estadisticas.errores:
-        raise RuntimeError(f'Quedaron {pendientes} eventos sin confirmar; errores: {estadisticas.errores[:3]}')
+        motivo = estadisticas.errores[0] if estadisticas.errores else 'sin respuesta'
+        raise RuntimeError(f'{len(estadisticas.errores)} eventos no se pudieron entregar y {pendientes} quedaron '
+                           f'sin confirmar (motivo: {motivo}). ¿Esta arriba Kafka?')

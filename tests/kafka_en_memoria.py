@@ -130,5 +130,18 @@ class ConsumidorEnMemoria:
     def commit(self, message=None, asynchronous=False):
         self.broker.confirmados[(self.grupo, message.partition())] = message.offset() + 1
 
+    def list_topics(self, topic=None, timeout=None):
+        """Sondeo del broker. Con broker_caido=True simula un Kafka que no responde."""
+        if getattr(self, 'broker_caido', False):
+            from confluent_kafka import KafkaException
+            raise KafkaException('broker caido (simulado)')
+
+        class _Topic:
+            error = None
+
+        class _Metadatos:
+            topics = {self.broker.topic: _Topic()}
+        return _Metadatos()
+
     def close(self):
         pass
