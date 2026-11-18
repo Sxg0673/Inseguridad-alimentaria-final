@@ -183,6 +183,8 @@ services:
         --describe --topic "$$KAFKA_TOPIC"
     restart: "no"
 
+  # restart: unless-stopped en todos los servicios: lo que se detiene a mano queda
+  # detenido aunque se reinicie Docker o el equipo (con "always" volvia a arrancar).
   postgres:
     image: postgres:16
     environment:
@@ -196,7 +198,7 @@ services:
       interval: 10s
       retries: 5
       start_period: 5s
-    restart: always
+    restart: unless-stopped
 
   airflow-apiserver:
     <<: *airflow-common
@@ -209,7 +211,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    restart: always
+    restart: unless-stopped
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -224,7 +226,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    restart: always
+    restart: unless-stopped
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -241,7 +243,7 @@ services:
       timeout: 30s
       retries: 5
       start_period: 120s
-    restart: always
+    restart: unless-stopped
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -258,7 +260,7 @@ services:
       timeout: 30s
       retries: 5
       start_period: 120s
-    restart: always
+    restart: unless-stopped
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
