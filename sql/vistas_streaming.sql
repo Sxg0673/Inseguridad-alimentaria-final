@@ -21,12 +21,23 @@ DROP VIEW IF EXISTS vw_stream_departamento;
 DROP VIEW IF EXISTS vw_stream_referencia_nacional;
 DROP VIEW IF EXISTS vw_stream_evolucion;
 DROP VIEW IF EXISTS vw_stream_salud_flujo;
+DROP MATERIALIZED VIEW IF EXISTS mv_stream_referencia_nacional;
+DROP MATERIALIZED VIEW IF EXISTS mv_stream_esperados_departamento;
 
 -- ---------------------------------------------------------------------
+-- Referencias fijas del DW: VISTAS MATERIALIZADAS.
+-- La referencia nacional y los hogares esperados por departamento no
+-- cambian entre cargas, pero calcularlos recorre los 87.060 hogares
+-- (~160 ms). El dashboard consulta cada 2 s: con vistas normales esas
+-- consultas competian con el consumidor (medido en Docker: el consumidor
+-- bajaba de ~90 a ~40 eventos/s). Se calculan una vez al crearse, y este
+-- archivo se ejecuta al final de cada carga (src/carga.py), con el DW ya
+-- cargado: siempre corresponden a la carga vigente.
+-- ---------------------------------------------------------------------
+
 -- Referencia nacional del DW (cifra del DANE, validada por la regla C11).
 -- Se calcula aqui y no se escribe fija en el codigo.
--- ---------------------------------------------------------------------
-CREATE VIEW vw_stream_referencia_nacional AS
+CREATE MATERIALIZED VIEW mv_stream_referencia_nacional AS
 SELECT
 	COUNT(*) AS hogares_esperados,
 	SUM(f.factor_expansion * f.prob_ia_moderada_grave) FILTER (WHERE f.prob_ia_moderada_grave IS NOT NULL)
@@ -36,6 +47,17 @@ SELECT
 		/ NULLIF(SUM(f.factor_expansion) FILTER (WHERE f.prob_ia_grave IS NOT NULL), 0)
 		AS prevalencia_grave_pct
 FROM fact_seguridad_alimentaria_hogar f;
+
+-- Hogares esperados por departamento (tamano de muestra de la ECV).
+CREATE MATERIALIZED VIEW mv_stream_esperados_departamento AS
+SELECT g.codigo_departamento, COUNT(*) AS hogares_esperados
+FROM fact_seguridad_alimentaria_hogar f
+JOIN dim_geografia g ON g.id_geografia = f.id_geografia
+GROUP BY g.codigo_departamento;
+
+-- Se mantiene el nombre de vista usado por el dashboard y las pruebas.
+CREATE VIEW vw_stream_referencia_nacional AS
+SELECT * FROM mv_stream_referencia_nacional;
 
 -- ---------------------------------------------------------------------
 -- RS1, RS2 y RS3 por departamento. Siempre 33 filas: los departamentos
@@ -47,13 +69,7 @@ FROM fact_seguridad_alimentaria_hogar f;
 -- fiable). Indicador operativo: ignora el efecto de diseno de la ECV.
 -- ---------------------------------------------------------------------
 CREATE VIEW vw_stream_departamento AS
-WITH esperados AS (
-	SELECT g.codigo_departamento, COUNT(*) AS hogares_esperados
-	FROM fact_seguridad_alimentaria_hogar f
-	JOIN dim_geografia g ON g.id_geografia = f.id_geografia
-	GROUP BY g.codigo_departamento
-),
-base AS (
+WITH base AS (
 	SELECT
 		d.id_departamento,
 		d.codigo_departamento,
@@ -66,7 +82,7 @@ base AS (
 		m.suma_fex_prob_g / NULLIF(m.suma_fex_con_fies, 0) AS prevalencia_g,
 		m.actualizado_en
 	FROM dim_departamento d
-	LEFT JOIN esperados e ON e.codigo_departamento = d.codigo_departamento
+	LEFT JOIN mv_stream_esperados_departamento e ON e.codigo_departamento = d.codigo_departamento
 	LEFT JOIN fact_metrica_departamento_stream m ON m.id_departamento = d.id_departamento
 ),
 calculo AS (
