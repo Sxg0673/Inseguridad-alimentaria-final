@@ -8,8 +8,6 @@ Entrega final del proyecto ETL: integración de la ECV 2025 del DANE y las Evalu
 
 **Pendientes generales (además de las notas de cada sección):**
 
-- [ ] Versionar en `docs/evidencia/` los reportes de las compuertas y el `carga.json` de una corrida real (hoy quedan en `data/batches/`, que no se versiona).
-- [ ] Traer al repositorio el perfil a nivel hogar de la Primera Entrega (`notebooks/data_profiling.ipynb` y sus hallazgos): el EDA debe cubrir todas las fuentes.
 - [ ] Tomar las capturas de la [guía de ejecución](docs/guia_ejecucion.md) (marcas 📸) y guardarlas en `docs/evidencia/`.
 - [ ] Dashboard histórico en Power BI: archivo `.pbix` (o enlace) en `dashboards/`, capturas e insights.
 - [ ] Corregir [`docs/contexto_problema.png`](docs/contexto_problema.png): atribuye cifras a la ENSIN, pero el proyecto usa la ECV.
@@ -23,8 +21,8 @@ Entrega final del proyecto ETL: integración de la ECV 2025 del DANE y las Evalu
 
 ## 2. Fuentes de datos y EDA
 
-> **Pendiente.** Fuentes, acceso a la API y su valor analítico: E2 §5 y §6 y [`data/raw/README.md`](data/raw/README.md). Perfilamiento: E2 §8 y [`notebooks/hallazgos_perfilamiento.md`](notebooks/hallazgos_perfilamiento.md) (EVA y ECV departamental). Falta:
-> - El perfil a nivel hogar de la Primera Entrega (ver pendientes generales).
+> **Pendiente.** Fuentes, acceso a la API y su valor analítico: E2 §5 y §6 y [`data/raw/README.md`](data/raw/README.md). Perfilamiento: E2 §8, [`notebooks/hallazgos_perfilamiento_hogares.md`](notebooks/hallazgos_perfilamiento_hogares.md) (ECV a nivel hogar, de la Primera Entrega) y [`notebooks/hallazgos_perfilamiento.md`](notebooks/hallazgos_perfilamiento.md) (EVA y ECV departamental). Falta:
+> - Resumir los tres perfiles en una sola narrativa (los notebooks 00, 01 y 02 cubren las dos fuentes).
 > - Una tabla **hallazgo del EDA → decisión de limpieza o transformación → regla de calidad**, con los IDs de [`docs/reglas_calidad.md`](docs/reglas_calidad.md) (C1-C16, A1-A3) y las reglas del contrato del streaming (sección 8.2).
 > - Describir la fuente de los eventos del streaming (sección 8.1) como tercera "fuente" del sistema.
 
@@ -75,8 +73,8 @@ flowchart TB
 ## 5. Calidad de datos
 
 > **Pendiente.** Reglas, severidades, umbrales y su traza a Great Expectations: [`docs/reglas_calidad.md`](docs/reglas_calidad.md) y E2 §9, §10 y §14. Falta:
-> - Resultados de una corrida real (reportes de las compuertas en `docs/evidencia/`).
-> - El comportamiento ante un fallo crítico, con la evidencia de la [guía de ejecución](docs/guia_ejecucion.md), sección 2.4: la tarea falla sin reintentos, todo lo posterior queda en `upstream_failed` y no se carga nada.
+> - Resumir los resultados de una corrida real: [`docs/evidencia/corrida/resumen.md`](docs/evidencia/corrida/resumen.md) (compuertas, advertencia A3 y conteos de la carga).
+> - El comportamiento ante un fallo crítico, con la evidencia de la [guía de ejecución](docs/guia_ejecucion.md), sección 2.4, y el reporte [`docs/evidencia/falla_controlada/resumen.md`](docs/evidencia/falla_controlada/resumen.md): la tarea falla sin reintentos, todo lo posterior queda en `upstream_failed` y no se carga nada.
 > - Mencionar que el contrato del streaming reutiliza reglas del batch (sección 8.2).
 
 ## 6. Data Warehouse
@@ -229,13 +227,13 @@ No hay credenciales reales en el repositorio: [.env.example](.env.example) trae 
 
 ## 11. Evidencia funcional
 
-Cada experimento se describe, con su resultado esperado, en la [guía de ejecución](docs/guia_ejecucion.md) (marcas 📸).
+Cada experimento se describe, con su resultado esperado, en la [guía de ejecución](docs/guia_ejecucion.md) (marcas 📸). Los reportes de Great Expectations y de la carga de una corrida real, y los de la falla controlada, están versionados en [`docs/evidencia/`](docs/evidencia) (copias verificadas por sha256 de los lotes, generadas con `python scripts/exportar_evidencia.py`).
 
 | Evidencia | Sección de la guía |
 |---|---|
 | Corrida exitosa del DAG (12 tareas) y conteos de la carga | 2.2 y 2.3 |
-| Resultados de Great Expectations (compuertas 1, 2 y 3) | 2.3 |
-| Fallo crítico visible en Airflow y carga bloqueada (regla C7) | 2.4 |
+| Resultados de Great Expectations (compuertas 1, 2 y 3) | 2.3 y [`docs/evidencia/corrida/`](docs/evidencia/corrida) |
+| Fallo crítico visible en Airflow y carga bloqueada (regla C7) | 2.4 y [`docs/evidencia/falla_controlada/`](docs/evidencia/falla_controlada) |
 | Reejecución segura | 2.5 |
 | Productor y consumidor en operación; métricas que cambian en el dashboard | 3.3 |
 | Eventos inválidos registrados con su motivo | 3.3 |
