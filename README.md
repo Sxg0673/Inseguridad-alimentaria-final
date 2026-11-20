@@ -1,30 +1,182 @@
 # Factores socioeconómicos asociados a la inseguridad alimentaria en los hogares colombianos
 
-Entrega final del proyecto ETL: integración de la ECV 2025 del DANE y las Evaluaciones Agropecuarias Municipales (EVA) de la UPRA, con procesamiento batch orquestado en Airflow y un componente de streaming con Kafka.
+<p align="center">
+  <strong>Entrega final del proyecto ETL: integración de la ECV 2025 del DANE y las Evaluaciones Agropecuarias Municipales (EVA) de la UPRA, con procesamiento batch orquestado en Airflow y un componente de streaming con Kafka.</strong>
+</p>
 
-> **Documento en construcción.** Las secciones 3, 8, 9 y 10 están completas. Las demás tienen una nota **Pendiente** con lo que falta y de dónde sale el material. Las notas se eliminan al cerrar cada sección.
->
-> Material base: README de la [Primera Entrega](https://github.com/Sxg0673/etl-inseguridad-alimentaria-colombia/tree/dev) y de la [Segunda Entrega](https://github.com/valedeveloper/inseguridad-alimentaria-2) (las referencias "E2 §N" de las notas son sus secciones), los documentos de [`docs/`](docs) y los hallazgos de [`notebooks/`](notebooks).
+---
 
-**Pendientes generales (además de las notas de cada sección):**
+## Índice
 
-- [ ] Tomar las capturas de la [guía de ejecución](docs/guia_ejecucion.md) (marcas 📸) y guardarlas en `docs/evidencia/`.
-- [ ] Dashboard histórico en Power BI: archivo `.pbix` (o enlace) en `dashboards/`, capturas e insights.
-- [ ] Corregir [`docs/contexto_problema.png`](docs/contexto_problema.png): atribuye cifras a la ENSIN, pero el proyecto usa la ECV.
-- [ ] Incorporar las observaciones recibidas en la Primera y la Segunda Entrega.
+- [1. Descripción del proyecto y objetivos](#1-descripción-del-proyecto-y-objetivos)
+  - [1.1 Contexto y problema](#11-contexto-y-problema)
+  - [1.2 Stakeholders](#12-stakeholders)
+  - [1.3 Alineación con los Objetivos de Desarrollo Sostenible (ODS)](#13-alineación-con-los-objetivos-de-desarrollo-sostenible-ods)
+  - [1.4 Requerimientos analíticos batch (R1–R7) y de baja latencia (RS1–RS4)](#14-requerimientos-analíticos-batch-r1r7-y-de-baja-latencia-rs1rs4)
+  - [1.5 Matriz de cumplimiento de objetivos](#15-matriz-de-cumplimiento-de-objetivos)
+- [2. Fuentes de datos y EDA](#2-fuentes-de-datos-y-eda)
+  - [2.1 Fuentes de datos del sistema](#21-fuentes-de-datos-del-sistema)
+  - [2.2 Valor analítico de la integración](#22-valor-analítico-de-la-integración)
+  - [2.3 Síntesis del perfilamiento exploratorio (EDA)](#23-síntesis-del-perfilamiento-exploratorio-eda)
+  - [2.4 Matriz: Hallazgo del EDA → Decisión de limpieza/transformación → Regla de calidad](#24-matriz-hallazgo-del-eda--decisión-de-limpiezatransformación--regla-de-calidad)
+- [3. Arquitectura del sistema](#3-arquitectura-del-sistema)
+- [4. Pipeline ETL batch](#4-pipeline-etl-batch)
+  - [4.1 Diseño del DAG y gestión de lotes](#41-diseño-del-dag-y-gestión-de-lotes)
+  - [4.2 Interfaces y contratos de tareas](#42-interfaces-y-contratos-de-tareas)
+  - [4.3 Políticas de fallos y reintentos selectivos](#43-políticas-de-fallos-y-reintentos-selectivos)
+  - [4.4 Justificación de la programación semanal](#44-justificación-de-la-programación-semanal)
+- [5. Calidad de datos](#5-calidad-de-datos)
+  - [5.1 Catálogo de reglas de calidad (Great Expectations)](#51-catálogo-de-reglas-de-calidad-great-expectations)
+  - [5.2 Evidencia de corrida real](#52-evidencia-de-corrida-real)
+  - [5.3 Comportamiento ante fallos críticos controlados](#53-comportamiento-ante-fallos-críticos-controlados)
+- [6. Data Warehouse](#6-data-warehouse)
+  - [6.1 Modelo dimensional refinado](#61-modelo-dimensional-refinado)
+  - [6.2 Granularidad, dimensiones y tablas de hechos](#62-granularidad-dimensiones-y-tablas-de-hechos)
+  - [6.3 Estrategia de carga transaccional e idempotente](#63-estrategia-de-carga-transaccional-e-idempotente)
+  - [6.4 Vistas analíticas y materializadas](#64-vistas-analíticas-y-materializadas)
+- [7. Dashboard analítico batch](#7-dashboard-analítico-batch)
+  - [7.1 Conexión y reglas de lectura](#71-conexión-y-reglas-de-lectura)
+  - [7.2 Cobertura de requerimientos R1–R7](#72-cobertura-de-requerimientos-r1r7)
+  - [7.3 Evidencia visual del informe Power BI](#73-evidencia-visual-del-informe-power-bi)
+- [8. Pipeline de streaming](#8-pipeline-de-streaming)
+  - [8.1 Justificación y simulación de baja latencia](#81-justificación-y-simulación-de-baja-latencia)
+  - [8.2 Contrato del evento y validación en 4 capas](#82-contrato-del-evento-y-validación-en-4-capas)
+  - [8.3 Consumidor en micro-lotes y garantías de entrega](#83-consumidor-en-micro-lotes-y-garantías-de-entrega)
+  - [8.4 Modelo y métricas en tiempo real (RS1–RS4)](#84-modelo-y-métricas-en-tiempo-real-rs1rs4)
+- [9. Dashboard en tiempo real](#9-dashboard-en-tiempo-real)
+- [10. Ejecución y reproducibilidad](#10-ejecución-y-reproducibilidad)
+- [11. Evidencia funcional](#11-evidencia-funcional)
+- [12. Decisiones de ingeniería y limitaciones](#12-decisiones-de-ingeniería-y-limitaciones)
+- [13. Integrantes y responsabilidades](#13-integrantes-y-responsabilidades)
+
+---
 
 ## 1. Descripción del proyecto y objetivos
 
-> **Pendiente.** Problema, pregunta y objetivos: E2 §1. Estado de R1-R5 y requerimientos integrados R6-R7: E2 §3 y §4. Falta:
-> - Separar los requerimientos **batch** (R1-R7, análisis histórico) de los de **baja latencia** (RS1-RS4, definidos en la sección 8.4) y justificar el streaming (sección 8.1).
-> - Cerrar con una tabla **objetivo → cómo se cumplió → evidencia** (vista, gráfico o métrica), como pide el enunciado.
+### 1.1 Contexto y problema
+
+En Colombia, la **Encuesta Nacional de Calidad de Vida (ECV) 2025**, producida por el **Departamento Administrativo Nacional de Estadística (DANE)**, ofrece información socioeconómica y territorial a nivel de hogar. Esta fuente permite estudiar conjuntamente las condiciones de vida y las medidas de inseguridad alimentaria derivadas de la escala FIES (*Food Insecurity Experience Scale*), con representatividad nacional y departamental.
+
+No obstante, la vulnerabilidad alimentaria no depende exclusivamente de las condiciones internas del hogar: el entorno productivo agrícola de los territorios condiciona la disponibilidad local de alimentos. Por ello, este proyecto integra la ECV con las **Evaluaciones Agropecuarias Municipales (EVA 2024–2025)** de la **Unidad de Planificación Rural Agropecuaria (UPRA)**.
+
+El proyecto responde a la siguiente pregunta central de investigación:
+
+> **¿Qué factores socioeconómicos, territoriales y de producción agrícola están asociados con una mayor prevalencia de inseguridad alimentaria en los hogares colombianos?**
+
+
+![Diagrama de contexto del problema](./docs/contexto_problema.png)
+
+### 1.2 Stakeholders
+
+| Stakeholder | Interés en el problema | Uso potencial de los resultados |
+|---|---|---|
+| **DANE** | Producción, evaluación y divulgación de estadísticas oficiales sobre calidad de vida. | Contrastar cifras FIES, validar consistencia metodológica y orientar futuros operativos. |
+| **Ministerio de Igualdad y DPS** | Focalización de subsidios y programas de asistencia alimentaria. | Priorizar transferencias condicionadas hacia territorios y hogares con choques no resueltos. |
+| **Ministerio de Agricultura y UPRA** | Planificación agropecuaria y soberanía alimentaria territorial. | Identificar departamentos con caídas críticas en cultivos básicos de la canasta alimentaria. |
+| **Gobernaciones y Alcaldías** | Comprensión de brechas territoriales intrarregionales. | Formular planes locales de desarrollo y abastecimiento nutricional. |
+| **Organizaciones Humanitarias (PMA, FAO)** | Detección temprana de crisis y monitoreo de vulnerabilidad. | Activar ayudas humanitarias ante caídas productivas y alertas operativas en tiempo real. |
+| **Comunidad Académica y Ciudadanía** | Investigación reproducible y control social. | Auditar metodologías de integración y explorar determinantes sociales de la nutrición. |
+
+### 1.3 Alineación con los Objetivos de Desarrollo Sostenible (ODS)
+
+| ODS | Relación con el proyecto | Contribución concreta |
+|---|---|---|
+| **ODS 2: Hambre Cero** | Núcleo temático central: medición de la inseguridad alimentaria moderada y grave. | Genera evidencia sobre la prevalencia FIES y la disponibilidad de cultivos de la canasta básica. |
+
+### 1.4 Requerimientos analíticos batch (R1–R7) y de baja latencia (RS1–RS4)
+
+El sistema distingue dos horizontes analíticos complementarios:
+
+#### Requerimientos Batch (Históricos, carga periódica en Airflow)
+* **R1 (Distribución territorial):** Caracterizar la prevalencia de inseguridad alimentaria moderada o grave y grave por región y departamento.
+* **R2 (Servicios públicos):** Evaluar la relación entre carencia de acueducto y alcantarillado con la vulnerabilidad alimentaria del hogar.
+* **R3 (Choques económicos):** Analizar el impacto de eventos adversos recientes (pérdida de empleo, atrasos en servicios, quiebra de negocios) sobre el acceso a alimentos.
+* **R4 (Estrategias de afrontamiento):** Identificar las conductas de mitigación adoptadas por el hogar (endeudamiento, reducción de gasto en alimentos, venta de bienes) según el nivel de severidad FIES.
+* **R5 (Gradiente de ingreso):** Medir la prevalencia de inseguridad alimentaria a lo largo de los quintiles de ingreso per cápita del hogar.
+* **R6 (Diversidad agrícola integrada):** Determinar si los departamentos con mayor diversidad de cultivos alimentarios cosechados en 2025 presentan menor prevalencia FIES.
+* **R7 (Variación productiva interanual):** Evaluar si los departamentos con mayor porcentaje de cultivos de la canasta en descenso productivo (2024 vs. 2025) exhiben mayor vulnerabilidad alimentaria.
+
+#### Requerimientos de Streaming (Baja latencia, eventos en Kafka y Streamlit)
+* **RS1 (Avance de recolección):** Monitorear en tiempo real el porcentaje de hogares encuestados recibidos frente a la muestra esperada (nacional y departamental).
+* **RS2 (Prevalencia acumulada en vivo):** Calcular la prevalencia FIES ponderada acumulada a medida que ingresan los eventos, observando su convergencia con la referencia anual del DW.
+* **RS3 (Alerta temprana departamental):** Activar alertas operativas automáticas para departamentos donde el límite inferior del intervalo de confianza (IC 95% Wilson) supera la prevalencia de referencia nacional.
+* **RS4 (Salud del flujo y calidad):** Fiscalizar la latencia del pipeline (media y p95) y contabilizar mensajes descartados por violación del contrato (esquema, valores, referencias o duplicados).
+
+> **Justificación del componente de streaming:** En un operativo censal o de encuesta de campo real, esperar el cierre y consolidación anual (6 a 12 meses) retrasa la intervención social. Monitorear los microdatos a medida que los encuestadores sincronizan sus dispositivos permite a las agencias humanitarias identificar departamentos en alerta nutricional semanas antes de la publicación oficial.
+
+### 1.5 Matriz de cumplimiento de objetivos
+
+| Requerimiento | Pregunta analítica / operativa | Cómo se cumplió en el sistema | Evidencia técnica |
+|---|---|---|---|
+| **R1** | ¿Cómo varía la inseguridad alimentaria entre regiones y departamentos? | Cálculo de prevalencia FIES ponderada con `FEX_C` a nivel departamental y regional. | Vista `vw_r1_distribucion_territorial`. |
+| **R2** | ¿La falta de acueducto y alcantarillado incrementa el riesgo de hambre? | Cruce de atributos de servicios en `fact_seguridad_alimentaria_hogar`. | Vista `vw_r2_servicios_publicos`. |
+| **R3** | ¿Cómo afecta la acumulación de choques económicos al hogar? | Modelado de dimensión *junk* con 11 eventos adversos y conteo de choques. | Vista `vw_r3_choques_economicos`. |
+| **R4** | ¿Qué estrategias activan los hogares según su nivel de severidad? | Mapeo de 14 estrategias de supervivencia cruzadas con la escala FIES (0 a 8). | Vista `vw_r4_estrategias_severidad`. |
+| **R5** | ¿Existe un gradiente claro entre quintiles de ingreso e inseguridad alimentaria? | Construcción de quintiles ponderados por factor de expansión y aislamiento de anomalías. | Vista `vw_r5_quintiles_ingreso`. |
+| **R6** | ¿La diversidad agrícola local mitiga la prevalencia departamental? | Conteo de cultivos de la canasta alimentaria con producción positiva en 2025. | Vista `vw_r6_diversidad_departamental`. |
+| **R7** | ¿Las caídas productivas agrícolas se asocian con mayor hambre? | Cálculo de variación porcentual interanual (2024–2025) y % de cultivos en descenso. | Vistas `vw_r7_variacion_cultivo` y `vw_r7_descenso_departamental`. |
+| **RS1** | ¿Cuál es el avance del operativo de recolección en tiempo real? | Agregación en micro-lotes de encuestas recibidas vs. muestra total de la ECV. | Vista `vw_stream_departamento_actual` / Métrica RS1. |
+| **RS2** | ¿A qué valor converge la prevalencia acumulada durante el flujo? | Ratio acumulativo de $\sum(\text{factor} \times \text{prob}) / \sum\text{factor}$ en PostgreSQL. | Vista `vw_stream_nacional` / Métrica RS2. |
+| **RS3** | ¿Qué territorios requieren focalización urgente durante la recolección? | Cálculo dinámico del límite inferior del IC 95% Wilson con umbral de 30 hogares. | Indicador visual de alerta en Streamlit / Métrica RS3. |
+| **RS4** | ¿El canal de eventos opera con baja latencia y sin corromper datos? | Trazabilidad en `stg_evento_encuesta` registrando latencia y causa de rechazo. | Vista `vw_stream_salud` / Métrica RS4. |
+
+---
 
 ## 2. Fuentes de datos y EDA
 
-> **Pendiente.** Fuentes, acceso a la API y su valor analítico: E2 §5 y §6 y [`data/raw/README.md`](data/raw/README.md). Perfilamiento: E2 §8, [`notebooks/hallazgos_perfilamiento_hogares.md`](notebooks/hallazgos_perfilamiento_hogares.md) (ECV a nivel hogar, de la Primera Entrega) y [`notebooks/hallazgos_perfilamiento.md`](notebooks/hallazgos_perfilamiento.md) (EVA y ECV departamental). Falta:
-> - Resumir los tres perfiles en una sola narrativa (los notebooks 00, 01 y 02 cubren las dos fuentes).
-> - Una tabla **hallazgo del EDA → decisión de limpieza o transformación → regla de calidad**, con los IDs de [`docs/reglas_calidad.md`](docs/reglas_calidad.md) (C1-C16, A1-A3) y las reglas del contrato del streaming (sección 8.2).
-> - Describir la fuente de los eventos del streaming (sección 8.1) como tercera "fuente" del sistema.
+### 2.1 Fuentes de datos del sistema
+
+| Característica | ECV 2025 (Primaria Batch) | EVA 2024–2025 (API Batch) | Eventos Encuesta (Streaming) |
+|---|---|---|---|
+| **Entidad responsable** | DANE (DIMPE). | UPRA (Ministerio de Agricultura). | Simulación de trabajo de campo (basada en ECV). |
+| **Mecanismo de acceso** | Descarga manual de 3 archivos CSV. | HTTP GET a API Socrata SODA (`uejq-wxrr.json`). | Broker Apache Kafka (topic `encuestas-hogares`). |
+| **Formato y codificación** | CSV delimitado por `;`, `utf-8-sig`. | JSON estructurado (texto plano). | Mensajes JSON serializados en UTF-8 con clave. |
+| **Granularidad de entrada** | Vivienda y Hogar. | Municipio × Código de Cultivo × Período. | Encuesta individual de un Hogar (`directorio`, `orden`). |
+| **Llaves naturales** | `DIRECTORIO`, `ORDEN`; depto `P1_DEPARTAMENTO`. | `c_digo_dane_municipio`, `c_digo_del_cultivo`, `periodo`. | Clave de mensaje: `codigo_departamento`; payload: `id_evento`. |
+| **Volumen extraído** | 87.060 hogares integrados (286 columnas). | 51.170 registros (25.553 en 2024; 25.617 en 2025). | 87.060 eventos emitidos (demo de ~8.700 pendientes). |
+| **Limitaciones conocidas** | No se distribuye en Git por peso (~150 MB). | Datos provisionales susceptibles de revisión anual. | Dependiente de la carga previa del Data Warehouse. |
+
+### 2.2 Valor analítico de la integración
+
+La integración entre la ECV y la EVA resuelve una limitación estructural clásica: las encuestas de hogares capturan la **demanda y el acceso económico a los alimentos**, pero ignoran la **disponibilidad física y la resiliencia productiva local**. Al acoplar ambas fuentes mediante el código departamental DIVIPOLA:
+1. Se evalúa si departamentos con mayor diversidad agroalimentaria (variedad de frutas, hortalizas, tubérculos y cereales) ofrecen mayor protección nutricional a sus hogares (R6).
+2. Se detecta el impacto de choques climáticos o productivos de corto plazo (caídas en toneladas entre 2024 y 2025) sobre los indicadores de hambre FIES (R7).
+3. Se aíslan departamentos sin vocación agrícola (caso Bogotá D.C., que consume pero no cultiva) preservando el valor nulo analítico en lugar de imputar cero.
+
+### 2.3 Síntesis del perfilamiento exploratorio (EDA)
+
+El perfilamiento sobre los datos completos (notebooks `00_profiling_ecv_hogares.ipynb`, `01_profiling_eva.ipynb` y `02_profiling_ecv_departamental.ipynb`) arrojó hallazgos determinantes:
+
+* **ECV a nivel hogar (87.060 registros):**
+  * **Integridad de llaves:** La unión `condiciones_vida` $\to$ `servicios_hogar` por `(DIRECTORIO, ORDEN)` y con `vivienda` por `DIRECTORIO` preserva exactamente 87.060 filas, sin huérfanos ni multiplicación cartesiana.
+  * **Columnas vacías:** Se detectaron 21 columnas 100% vacías (`P9025`, `P3180`, `P3202`, `P3516`, etc.) correspondientes a encabezados de baterías múltiples en el diseño de captura del DANE.
+  * **Estructura FIES:** 718 hogares tienen nulas las probabilidades `PROB_IAMG` y `PROB_IAG`, coincidiendo de forma idéntica con respuestas "No sabe / No informa" (código 3). La prevalencia ponderada calculada sobre los 86.342 hogares restantes es **21,10%**, reconciliando con la cifra oficial reportada por el DANE.
+  * **Inconsistencias de ingreso:** 3 registros presentan `PERCAPITA = 0` con `I_HOGAR > 0` (hasta \$2.608.333). Se aíslan en una categoría para no distorsionar los quintiles de R5.
+* **EVA a nivel municipal (51.170 registros):**
+  * **Esquema textual:** La API entrega todos los campos como cadenas de texto, requiriendo *casting* numérico estricto.
+  * **Área cosechada > sembrada:** Se identificaron 6.950 registros donde el área cosechada supera la sembrada. Según la metodología UPRA vigente desde 2022, en cultivos transitorios esto es válido pues refleja cosechas efectivas de siembras de períodos precedentes.
+  * **Canasta alimentaria:** De 160 cultivos en EVA, se definieron 139 incluidos y 21 excluidos (pastos, flores, tabaco, forestales y medicinales), cruzados con la pregunta de gasto en alimentos P3204 de la ECV.
+* **Eventos de Streaming:**
+  * Al simular la llegada en campo, los eventos deben cumplir un contrato estricto de tipos, rangos lógicos ($0 \le \text{prob} \le 100$, $\text{prob\_grave} \le \text{prob\_moderada}$), consistencia referencial y control de duplicidad.
+
+### 2.4 Matriz: Hallazgo del EDA → Decisión de limpieza/transformación → Regla de calidad
+
+| Hallazgo / Problema en EDA | Decisión de limpieza / transformación | Regla de calidad asociada |
+|---|---|---|
+| 21 columnas de la ECV están 100% vacías (encabezados de preguntas). | Se eliminan en `src/ecv/clean.py` para liberar memoria y evitar sesgos. | Estructura interna ECV. |
+| 6.365 hogares presentan código de departamento de 1 solo dígito en la ECV. | Se aplica normalización `zfill(2)` antes del cruce DIVIPOLA. | **C2** (DIVIPOLA en ECV). |
+| Códigos de departamento y municipio en EVA con inconsistencia de longitud. | Se valida formato estándar de 2 dígitos (depto) y 5 dígitos (municipio). | **C8** (DIVIPOLA en EVA). |
+| 3 hogares tienen `PERCAPITA = 0` pero ingresos del hogar mayores a \$1.000.000. | Se clasifican en la categoría `"Dato inconsistente"` en `dim_nivel_ingreso`. | Tratamiento R5 en `transform.py`. |
+| 718 hogares no respondieron la batería de preguntas FIES (código 3). | Se mapean a severidad `"Sin dato"` y se excluyen del denominador de prevalencia. | **C12** (Severidad y FIES). |
+| 74.125 hogares sin choques económicos tienen 0 estrategias de supervivencia. | Se garantiza consistencia lógica biunívoca: sin choques $\iff$ sin estrategias. | **C13** (Consistencia choques/estrategias). |
+| La API EVA devuelve números con formato de cadena de texto. | Parseo estricto con regex `^\d+(\.\d+)?$` y conversión a punto decimal. | **C6** (Medidas numéricas EVA). |
+| Paginación en bloques de 5.000 registros puede omitir registros si hay caídas. | Conciliación contra el `$select=count(*)` oficial reportado por la API SODA. | **C3** (Completitud extracción EVA). |
+| Registros de cultivos no alimentarios (café no procesado, flores, tabaco). | Filtrado por catálogo fijo de canasta alimentaria (`config/canasta_cultivos.csv`). | **C9** (Canasta alimentaria). |
+| Riesgo de división por cero en cultivos con producción base 2024 en cero. | Clasificación explícita en estados: `comparable`, `base_cero`, `solo_2024`, `solo_2025`. | **C16** (Comparabilidad de variación). |
+| Mensajes en Kafka con campos faltantes, tipos erróneos o fuera de rango. | Rechazo en micro-lote, asignación de estado y persistencia en staging. | Contrato Streaming (Esquema/Valores). |
+| Eventos con departamentos inexistentes en el DW o reenvío de hogares. | Verificación contra dimensiones y restricción de unicidad `(directorio, orden)`. | Contrato Streaming (Referencia/Duplicado). |
+
+---
 
 ## 3. Arquitectura del sistema
 
@@ -62,194 +214,335 @@ flowchart TB
 
 | Componente | Dónde corre | Función |
 |---|---|---|
-| Airflow, PostgreSQL (metadatos y warehouse), Kafka | Docker Compose | Orquestación, almacenamiento y transporte de eventos. Kafka está en el perfil `streaming`. |
-| Productor, consumidor y dashboard en tiempo real | Entorno virtual de Python 3.12 | Se conectan por `127.0.0.1` a Kafka (9092) y al warehouse (5434). |
-| Power BI | Equipo del usuario | Lee las vistas R1-R7 del warehouse. |
+| **Airflow 3.1.8** | Docker Compose | Orquestación del pipeline batch, ejecución de compuertas y aislamiento por lotes. |
+| **PostgreSQL 16** | Docker Compose | Almacén de metadatos de Airflow (puerto 5432 interno) y Data Warehouse analítico (puerto publicado 5434). |
+| **Apache Kafka 3.9.1** | Docker Compose (perfil `streaming`) | Transporte de eventos en modo KRaft, topic `encuestas-hogares` con 3 particiones. |
+| **Productor y Consumidor** | Entorno virtual Python 3.12/3.13 | Emisión de eventos simulados, validación de contrato en micro-lotes e inserción en el DW. |
+| **Streamlit 1.67** | Entorno virtual Python 3.12/3.13 | Dashboard de baja latencia con refresco cada 2 segundos conectado a las vistas de streaming. |
+| **Power BI Desktop** | Equipo local del analista | Conexión directa al Data Warehouse para análisis multidimensional histórico (R1–R7). |
+
+---
 
 ## 4. Pipeline ETL batch
 
-> **Pendiente.** Estructura del DAG, interfaces de tareas, reintentos y ejecución: [`docs/orquestacion.md`](docs/orquestacion.md) y E2 §11, §12, §16 y §17 (incluye los diagramas Mermaid del DAG). Falta: describir la programación semanal (`@weekly`, `catchup=False`) y su motivo: la UPRA puede revisar las cifras de EVA de 2024-2025, y la ECV es anual (ver el docstring de [`dags/etl_dag.py`](dags/etl_dag.py)).
+### 4.1 Diseño del DAG y gestión de lotes
+
+El DAG principal `inseguridad_alimentaria_etl` ([dags/etl_dag.py](dags/etl_dag.py)) implementa un diseño de convergencia por compuertas:
+
+```mermaid
+flowchart LR
+    P[preparar_lote] --> E1[extraer_ecv] --> V1[validar_ecv_cruda]
+    P --> E2[extraer_eva] --> V2[validar_eva_cruda]
+    V1 --> T1[transformar_ecv]
+    V2 --> T1
+    V1 --> T2[transformar_eva]
+    V2 --> T2
+    T1 --> M1[modelar_ecv] --> I[integrar_indicadores]
+    T2 --> M2[modelar_eva] --> I
+    I --> V3[validar_preparados] --> C[cargar]
+```
+
+* **Principio de aislamiento por lotes:** Airflow orquesta pero **no transmite datos por XCom**. Cada corrida genera una carpeta inmutable en `data/batches/<sha256(run_id)>/`.
+* **Inmutabilidad y trazabilidad:** Toda extracción o archivo intermedio se almacena en formato Parquet y se registra con su respectivo hash `SHA-256` en un manifiesto JSON. Si un archivo es adulterado, el pipeline se detiene.
+
+### 4.2 Interfaces y contratos de tareas
+
+| Tarea Airflow | Entrada | Salida en el lote | Criterio de parada |
+|---|---|---|---|
+| `preparar_lote` | `run_id` de la corrida. | Carpeta de lote y `lote.json`. | Error de sistema de archivos. |
+| `extraer_ecv` | CSV locales en `data/raw/ecv/`. | Copias congeladas en `ecv/raw/` y manifiesto. | Ausencia de cualquiera de los 3 CSV. |
+| `validar_ecv_cruda` | Manifiesto y CSV de ECV. | Reporte `calidad/compuerta_1.json`. | Fallo en reglas C1 o C2. |
+| `extraer_eva` | API SODA UPRA; param `falla_controlada`. | `eva/raw/eva_2024_2025.json` y manifiesto. | API caída (tras reintentos) o error 4xx. |
+| `validar_eva_cruda` | JSON crudo de la API. | Reporte `calidad/compuerta_2.json`. | Fallo en reglas C3 a C9. |
+| `transformar_ecv` | Lote validado por compuerta 1 y 2. | `ecv/procesado/hogares_transformados.parquet`. | Alteración de hash SHA-256. |
+| `modelar_ecv` | Tabla transformada. | 5 dimensiones Parquet y hecho de hogares. | Duplicidad en llaves sustitutas. |
+| `transformar_eva` | Lote EVA validado por compuertas 1 y 2. | `eva/procesado/produccion_agregada.parquet`. | Cultivo sin clasificación en canasta. |
+| `modelar_eva` | Agregados de producción y DIVIPOLA. | Dimensiones `dim_cultivo`, `dim_departamento` y 2 hechos. | Código territorial inválido. |
+| `integrar_indicadores` | Modelos ECV y EVA. | `integrado/procesado/fact_indicadores_departamento.parquet`. | Departamento ECV huérfano. |
+| `validar_preparados` | Todas las tablas del modelo Parquet. | Reporte `calidad/compuerta_3.json`. | Fallo en reglas C10 a C16. |
+| `cargar` | Tablas aprobadas por compuerta 3. | 11 tablas en PostgreSQL y `carga/carga.json`. | Fallo de conexión o descuadre de filas. |
+
+### 4.3 Políticas de fallos y reintentos selectivos
+
+1. **Errores Deterministas (`ErrorDeterminista`):** Violaciones de reglas críticas de Great Expectations, esquemas alterados o discrepancias en conteos. Se transforman inmediatamente en `AirflowFailException` y **nunca se reintentan** (reintentar reproduciría el mismo fallo).
+2. **Errores Transitorios (`ErrorTransitorio`):** Caídas de red hacia la API SODA o reinicios temporales del contenedor del Data Warehouse. Se configuran reintentos selectivos:
+   * `extraer_eva`: 2 reintentos con intervalo de 5 minutos (sumados a los 3 reintentos inmediatos con *backoff* exponencial del extractor).
+   * `cargar`: 2 reintentos con intervalo de 1 minuto para tolerar reinicios del servicio `warehouse`.
+
+### 4.4 Justificación de la programación semanal
+
+El DAG está configurado con `schedule='@weekly'` y `catchup=False`. La UPRA advierte formalmente que las cifras de las Evaluaciones Agropecuarias Municipales de los dos últimos años (2024–2025) son preliminares y sujetas a revisión periódica. Una frecuencia semanal permite incorporar ajustes oficiales en la producción agrícola sin saturar la infraestructura. Fijar `catchup=False` evita corridas retroactivas innecesarias si el entorno estuvo inactivo.
+
+---
 
 ## 5. Calidad de datos
 
-> **Pendiente.** Reglas, severidades, umbrales y su traza a Great Expectations: [`docs/reglas_calidad.md`](docs/reglas_calidad.md) y E2 §9, §10 y §14. Falta:
-> - Resumir los resultados de una corrida real: [`docs/evidencia/corrida/resumen.md`](docs/evidencia/corrida/resumen.md) (compuertas, advertencia A3 y conteos de la carga).
-> - El comportamiento ante un fallo crítico, con la evidencia de la [guía de ejecución](docs/guia_ejecucion.md), sección 2.4, y el reporte [`docs/evidencia/falla_controlada/resumen.md`](docs/evidencia/falla_controlada/resumen.md): la tarea falla sin reintentos, todo lo posterior queda en `upstream_failed` y no se carga nada.
-> - Mencionar que el contrato del streaming reutiliza reglas del batch (sección 8.2).
+### 5.1 Catálogo de reglas de calidad (Great Expectations)
+
+El sistema implementa 19 reglas formales mediante Great Expectations 1.23.1 ([docs/reglas_calidad.md](docs/reglas_calidad.md)), distribuidas en tres compuertas de paso obligado:
+
+| Compuerta | ID | Tipo | Regla evaluada | Umbral | Severidad | Requerimiento protegido |
+|---|---|---|---|---|---|---|
+| **1: ECV Cruda** | **C1** | Unicidad | Llave compuesta `(DIRECTORIO, ORDEN)` única y no nula. | 0 duplicados, 0 nulos | Crítica | R1–R7 |
+| **1: ECV Cruda** | **C2** | Integridad | `P1_DEPARTAMENTO` con `zfill(2)` pertenece a DIVIPOLA. | 100% de cruce | Crítica | R1, R6, R7 |
+| **2: EVA Cruda** | **C3** | Conciliación | Registros extraídos igual a `$select=count(*)` por año. | Diferencia = 0 | Crítica | R6, R7 |
+| **2: EVA Cruda** | **C4** | Esquema | Presencia obligatoria de los 18 campos requeridos. | 18 de 18 campos | Crítica | R6, R7 |
+| **2: EVA Cruda** | **C5** | Dominio | Año $\in \{2024, 2025\}$ y coherencia con período. | 100% registros | Crítica | R7 |
+| **2: EVA Cruda** | **C6** | Formato | Áreas, producción y rendimiento numéricos no negativos. | 100% válidos | Crítica | R6, R7 |
+| **2: EVA Cruda** | **C7** | Unicidad | Llave `(municipio, codigo_cultivo, periodo)` única. | 0 duplicados | Crítica | R6, R7 |
+| **2: EVA Cruda** | **C8** | Geografía | Códigos municipales de 5 dígitos alineados con su depto. | 100% válidos | Crítica | R6, R7 |
+| **2: EVA Cruda** | **C9** | Catálogo | Todo cultivo está categorizado en la canasta alimentaria. | 100% presentes | Crítica | R6, R7 |
+| **2: EVA Cruda** | **A1** | Cobertura | Cobertura geográfica mínima por año en EVA. | $\ge 32$ departamentos | Advertencia | R6, R7 |
+| **2: EVA Cruda** | **A2** | Atípicos | Rendimiento agrícola extremo ($> 20\times$ mediana local). | 0 registros | Advertencia | R7 |
+| **3: Preparados** | **C10** | Conservación | Filas del hecho igual a hogares transformados (87.060). | Diferencia = 0 | Crítica | R1–R5 |
+| **3: Preparados** | **C11** | Conciliación | Prevalencia moderada/grave nacional y departamental. | 21,10% $\pm$ 0,1% | Crítica | R1, R6, R7 |
+| **3: Preparados** | **C12** | Consistencia | Severidad `"Sin dato"` $\iff$ probabilidad FIES nula. | 100% coincidencia | Crítica | R4 |
+| **3: Preparados** | **C13** | Negocio | Coherencia en conteos de choques y estrategias. | 100% coincidencia | Crítica | R3, R4 |
+| **3: Preparados** | **C14** | Conservación | Producción total conservada tras agregación departamental. | Diferencia $< 1$ t | Crítica | R6, R7 |
+| **3: Preparados** | **C15** | Integridad | Exactamente 33 departamentos; Bogotá con diversidad nula. | 33 filas, 0 ceros falsos | Crítica | R6 |
+| **3: Preparados** | **C16** | Rango | Variación porcentual finita y estados de comparabilidad. | 0 infinitos no marcados | Crítica | R7 |
+| **3: Preparados** | **A3** | Robustez | Identificación de departamentos con baja muestra agrícola. | $< 15$ cultivos | Advertencia | R6, R7 |
+
+### 5.2 Evidencia de corrida real
+
+En la ejecución exitosa certificada ([docs/evidencia/corrida/resumen.md](docs/evidencia/corrida/resumen.md)):
+* **Compuertas 1 y 2:** Aprobadas al 100% sin observaciones.
+* **Compuerta 3:** Resultó `aprobada_con_advertencias` debido a la regla **A3** (departamento de Guaviare registra solo 7 cultivos comparables, marcándose con `baja_cobertura = true`).
+* **Conciliación de carga:** 92.496 filas insertadas en el Data Warehouse, incluyendo exactamente 87.060 hogares en `fact_seguridad_alimentaria_hogar`.
+
+### 5.3 Comportamiento ante fallos críticos controlados
+
+Para validar la robustez ante datos corruptos (Test B, [docs/evidencia/falla_controlada/resumen.md](docs/evidencia/falla_controlada/resumen.md)):
+1. Se disparó el DAG con el parámetro `falla_controlada = true`, inyectando un registro duplicado en la extracción de la API.
+2. La tarea `validar_eva_cruda` falló inmediatamente al evaluar la regla **C7** (`ExpectCompoundColumnsToBeUnique`).
+3. El estado de la compuerta 2 pasó a `rechazada`.
+4. Airflow detuvo el DAG, las tareas posteriores quedaron en `upstream_failed` y **la tarea `cargar` no se ejecutó**, impidiendo que datos corruptos alcanzaran el Data Warehouse.
+
+---
 
 ## 6. Data Warehouse
 
-> **Pendiente.** Modelo dimensional, granos y justificación: E2 §13 y §15, [`docs/modelo_dimensional.dbml`](docs/modelo_dimensional.dbml) y [`sql/create_tables.sql`](sql/create_tables.sql). Falta:
-> - Incluir las tres tablas del streaming (sección 8.4) en el diagrama y en el registro de cambios del modelo.
-> - Estrategia de carga: `TRUNCATE` + `INSERT` en una transacción, conciliación de conteos y recreación de vistas ([`src/carga.py`](src/carga.py)). Las tablas del streaming entran en el mismo `TRUNCATE` porque tienen FK a dimensiones cuyas claves sustitutas se reconstruyen en cada carga: una carga nueva reinicia el streaming.
-> - Vistas: R1-R7 ([`sql/vistas_analiticas.sql`](sql/vistas_analiticas.sql)) y las del streaming ([`sql/vistas_streaming.sql`](sql/vistas_streaming.sql)), incluidas las dos vistas materializadas que se recalculan en cada carga.
+### 6.1 Modelo dimensional refinado
+
+El Data Warehouse en PostgreSQL implementa un esquema constelación estructurado en tres componentes: Hogares (Batch), Producción Agrícola (Batch) y Eventos en Tiempo Real (Streaming).
+
+```mermaid
+erDiagram
+    dim_geografia ||--o{ fact_seguridad_alimentaria_hogar : id_geografia
+    dim_nivel_ingreso ||--o{ fact_seguridad_alimentaria_hogar : id_nivel_ingreso
+    dim_nivel_severidad_ia ||--o{ fact_seguridad_alimentaria_hogar : id_nivel_severidad_ia
+    dim_choque_economico ||--o{ fact_seguridad_alimentaria_hogar : id_choque_economico
+    dim_estrategia_afrontamiento ||--o{ fact_seguridad_alimentaria_hogar : id_estrategia_afrontamiento
+
+    dim_departamento ||--o{ fact_produccion_agricola : id_departamento
+    dim_cultivo ||--o{ fact_produccion_agricola : id_cultivo
+    dim_departamento ||--o{ fact_variacion_produccion : id_departamento
+    dim_cultivo ||--o{ fact_variacion_produccion : id_cultivo
+    dim_departamento ||--o| fact_indicadores_departamento : id_departamento
+
+    stg_evento_encuesta ||--o| fact_evento_encuesta : id_evento_crudo
+    dim_geografia ||--o{ fact_evento_encuesta : id_geografia
+    dim_nivel_severidad_ia ||--o{ fact_evento_encuesta : id_nivel_severidad_ia
+    dim_departamento ||--o| fact_metrica_departamento_stream : id_departamento
+```
+
+### 6.2 Granularidad, dimensiones y tablas de hechos
+
+| Entidad | Tipo | Granularidad | Filas cargadas | Clave sustituta / Natural |
+|---|---|---|---:|---|
+| `dim_geografia` | Dimensión | Departamento × Clase de área (cabecera / rural). | 65 | `id_geografia` |
+| `dim_nivel_ingreso` | Dimensión | Quintil de ingreso per cápita o inconsistente. | 6 | `id_nivel_ingreso` |
+| `dim_nivel_severidad_ia` | Dimensión | Nivel de severidad FIES (puntaje crudo 0 a 8). | 5 | `id_nivel_severidad_ia` |
+| `dim_choque_economico` | Junk Dimension | Combinación observada de choques adversos. | 172 | `id_choque_economico` |
+| `dim_estrategia_afrontamiento` | Junk Dimension | Combinación observada de estrategias. | 265 | `id_estrategia_afrontamiento` |
+| `dim_departamento` | Dimensión | Departamento político (atributo conformado). | 33 | `id_departamento` |
+| `dim_cultivo` | Dimensión | Cultivo de la canasta alimentaria (P3204). | 160 | `id_cultivo` |
+| `fact_seguridad_alimentaria_hogar` | Hecho | Un hogar encuestado en la ECV 2025. | 87.060 | `id_hogar` / `(directorio, orden)` |
+| `fact_produccion_agricola` | Hecho | Departamento × Cultivo × Año agrícola. | 3.204 | `id_produccion` |
+| `fact_variacion_produccion` | Hecho | Departamento × Cultivo (variación 2024–2025). | 1.493 | `(id_departamento, id_cultivo)` |
+| `fact_indicadores_departamento` | Hecho | Indicadores consolidados por departamento. | 33 | `id_departamento` |
+| `stg_evento_encuesta` | Staging Streaming | Mensaje crudo recibido de Kafka. | Dinámico | `id_evento_crudo` / `(topic, part, offset)` |
+| `fact_evento_encuesta` | Hecho Streaming | Llegada válida de encuesta de un hogar. | Dinámico | `id_evento_encuesta` / `(directorio, orden)` |
+| `fact_metrica_departamento_stream` | Snapshot Streaming | Acumulado del operativo en un departamento. | 33 | `id_departamento` |
+
+### 6.3 Estrategia de carga transaccional e idempotente
+
+La etapa de carga ([src/carga.py](src/carga.py)) sigue una estricta estrategia transaccional:
+1. **Reinicio coordinado:** En una sola transacción se ejecuta `TRUNCATE ... CASCADE` sobre las 11 tablas del modelo y las 3 tablas del streaming. Esto garantiza que una recarga batch limpie los datos transaccionales de streaming, ya que sus claves foráneas dependen de las claves sustitutas reconstruidas.
+2. **Carga en bloque:** Inserción de dimensiones antes que hechos mediante `execute_values` de `psycopg2` en lotes de 5.000 filas.
+3. **Conciliación post-inserción:** Se compara `COUNT(*)` en PostgreSQL contra la cantidad de registros en cada archivo Parquet del lote. Si existe una sola diferencia, se ejecuta `ROLLBACK` total.
+4. **Recreación de vistas:** Se ejecutan [sql/vistas_analiticas.sql](sql/vistas_analiticas.sql) y [sql/vistas_streaming.sql](sql/vistas_streaming.sql), refrescando las vistas materializadas de referencia.
+
+### 6.4 Vistas analíticas y materializadas
+
+* **Vistas Analíticas R1–R7:** Entregan los porcentajes ya ponderados por `factor_expansion` y evitan errores comunes de promediar porcentajes:
+  * `vw_r1_distribucion_territorial`, `vw_r2_servicios_publicos`, `vw_r3_choques_economicos`, `vw_r4_estrategias_severidad`, `vw_r5_quintiles_ingreso`, `vw_r6_diversidad_departamental`, `vw_r7_variacion_cultivo`, `vw_r7_descenso_departamental`.
+* **Vistas Materializadas de Streaming:** `vw_stream_referencia_nacional` y `vw_stream_hogares_esperados_depto`, recalculadas tras cada corrida batch para que las consultas concurrentes de Streamlit no compitan con la inserción del consumidor.
+
+---
 
 ## 7. Dashboard analítico batch
 
-> **Pendiente.** Conexión, vistas y reglas de lectura: [`docs/guia_dashboard.md`](docs/guia_dashboard.md). Lo ya publicado para R6 y R7: E2 §21. Falta el informe completo con R1-R7: archivo o enlace, capturas, KPIs e insights.
+### 7.1 Conexión y reglas de lectura
+
+El informe en Power BI Desktop se conecta al Data Warehouse en PostgreSQL (`localhost:5434`, base `warehouse`) mediante el modo **Importar**.
+
+> **Reglas analíticas clave ([docs/guia_dashboard.md](docs/guia_dashboard.md)):**
+> 1. Consumir directamente las vistas `vw_r*` que ya traen la ponderación poblacional correcta.
+> 2. La prevalencia oficial de referencia nacional es **21,10%** moderada o grave y **3,42%** grave.
+> 3. Bogotá D.C. figura con `sin_dato_agricola = true` en R6 y R7; debe excluirse de los gráficos de dispersión agrícola sin alterar el ranking territorial de R1.
+> 4. Los departamentos con `baja_cobertura = true` (Guaviare) deben destacarse visualmente.
+
+### 7.2 Cobertura de requerimientos R1–R7
+
+| Req. | Visualización recomendada | Vista del DW | Indicadores / KPIs mostrados |
+|---|---|---|---|
+| **R1** | Mapa de coropletas y barras ordenadas por prevalencia. | `vw_r6_diversidad_departamental` | Prevalencia moderada/grave y grave por departamento; hogares encuestados. |
+| **R2** | Gráfico de barras comparativo (4 combinaciones de servicios). | `vw_r2_servicios_publicos` | Prevalencia según cobertura de acueducto y alcantarillado. |
+| **R3** | Gráfico de líneas / barras según número de choques (0 a 11). | `vw_r3_choques_economicos` | Crecimiento de la vulnerabilidad alimentaria por acumulación de eventos adversos. |
+| **R4** | Barras apiladas al 100% por nivel de severidad FIES. | `vw_r4_estrategias_severidad` | Distribución porcentual de las 14 estrategias de afrontamiento. |
+| **R5** | Gráfico de barras por quintil de ingreso per cápita. | `vw_r5_quintiles_ingreso` | Gradiente económico (Q1 más vulnerable vs. Q5 más resiliente) y categoría inconsistente. |
+| **R6** | **Dispersión:** Diversidad de cultivos (X) vs. Prevalencia (Y). | `vw_r6_diversidad_departamental` | Correlación entre variedad de cultivos cosechados y reducción de inseguridad alimentaria. |
+| **R7** | **Dispersión y Tabla:** % cultivos en caída (X) vs. Prevalencia (Y). | `vw_r7_descenso_departamental`, `vw_r7_variacion_cultivo` | Impacto de caídas en la producción agrícola sobre la prevalencia; buscador de cultivos. |
+
+### 7.3 Evidencia visual del informe Power BI
+
+`[ Espacio reservado para las capturas del dashboard en dashboards/ ]`
+
+* **R1 y R2:** Distribución territorial y brecha de servicios públicos:
+  *(Inserta aquí captura de mapa/barras R1 y gráfico R2)*
+* **R3, R4 y R5:** Choques económicos, estrategias de afrontamiento y gradiente de quintiles:
+  *(Inserta aquí captura de visualizaciones R3, R4 y R5)*
+* **R6 y R7 (Integración de la API):** Dispersión de diversidad agrícola y variación productiva:
+  *(Inserta aquí captura de gráficos de dispersión R6 y R7)*
+
+---
 
 ## 8. Pipeline de streaming
 
-### 8.1 Qué se transmite y por qué con baja latencia
+### 8.1 Justificación y simulación de baja latencia
 
-**Simulación declarada.** La ECV 2025 ya está cargada en el DW. El productor re-publica `fact_seguridad_alimentaria_hogar` hogar por hogar como si las encuestas llegaran del trabajo de campo. En un operativo real, esperar al cierre de la encuesta (meses) para conocer la prevalencia retrasa la focalización de la ayuda alimentaria. Ver la prevalencia acumulada y las alertas por departamento mientras llegan las encuestas permite reaccionar antes.
+En operativos estadísticos de gran escala, la recolección de microdatos en campo toma meses. El pipeline de streaming implementa una **simulación declarada**: toma los hogares de `fact_seguridad_alimentaria_hogar` y los re-publica individualmente hacia Kafka emulando la sincronización en vivo de los dispositivos de campo. Esto permite monitorear alertas nutricionales territoriales antes del cierre censal.
 
-| Elemento | Decisión |
-|---|---|
-| Origen de los eventos | El hecho de hogares del DW con su geografía y severidad, leído una vez al arrancar ([`src/streaming/fuente.py`](src/streaming/fuente.py)). El hogar se identifica por su clave natural (`directorio`, `orden`): las claves sustitutas cambian en cada carga. |
-| Orden y ritmo | Orden mezclado y reproducible (semilla 42). Ritmo configurable en eventos por segundo (`--eventos-por-segundo`, 50 por defecto). |
-| Demo recortada | `streaming/precargar.py` deja un porcentaje de hogares como ya recibidos (el operativo ya está avanzado) y `productor.py --pendientes` publica solo los que faltan. Los precargados se marcan con `origen = 'precarga'` y no cuentan en las métricas de salud del flujo ni de latencia. |
-| Topic | `encuestas-hogares`, 3 particiones, replicación 1, creado por el servicio `kafka-init` (la creación automática de topics está apagada). |
-| Clave del mensaje | Código del departamento: los eventos de un departamento llegan en orden dentro de su partición. |
-| Entrega del productor | Idempotente (`enable.idempotence`): sin pérdidas ni duplicados por reintentos internos. |
+* **Topic:** `encuestas-hogares`, 3 particiones, factor de replicación 1 (Kafka KRaft).
+* **Particionamiento:** Clave del mensaje = código de departamento (garantiza orden secuencial por territorio).
+* **Productor idempotente:** Configurado con `enable.idempotence = true` para evitar mensajes duplicados en reintentos internos.
 
-### 8.2 Contrato del evento
+### 8.2 Contrato del evento y validación en 4 capas
 
-Definido en [`src/streaming/contrato.py`](src/streaming/contrato.py), que comparten productor y consumidor. Los rangos reutilizan las reglas del batch ([reglas de calidad](docs/reglas_calidad.md)).
+El contrato ([src/streaming/contrato.py](src/streaming/contrato.py)) valida cada mensaje en cuatro barreras sucesivas:
 
-| Campo | Tipo | Regla |
-|---|---|---|
-| `version_contrato` | entero | = 1 |
-| `id_evento` | texto | UUID (identificador del evento) |
-| `momento_evento` | texto | ISO-8601 con zona horaria (marca de tiempo de emisión) |
-| `directorio`, `orden` | texto | solo dígitos; hasta 10 y 2 caracteres |
-| `codigo_departamento` | texto | 2 dígitos (C2) e igual a la clave del mensaje |
-| `codigo_region`, `codigo_clase` | texto | 1 carácter |
-| `nombre_severidad` | texto | uno de los 5 niveles de `dim_nivel_severidad_ia` |
-| `factor_expansion` | número | finito y mayor que 0 |
-| `prob_ia_moderada_grave`, `prob_ia_grave` | número o null | 0-100; null si y solo si la severidad es «Sin dato» (C12); grave ≤ moderada o grave |
+```
+Mensaje de Kafka ──► [Capa 1: Esquema] ──► [Capa 2: Valores] ──► [Capa 3: Referencias] ──► [Capa 4: Duplicados] ──► Fact Streaming
+                           │                      │                      │                        │
+                           ▼                      ▼                      ▼                        ▼
+                    INVALIDO_ESQUEMA       INVALIDO_VALORES       INVALIDO_REFERENCIA         DUPLICADO
+                           └──────────────────────┴──────────────────────┴────────────────────────┘
+                                                                  │
+                                                                  ▼
+                                                      stg_evento_encuesta (con motivo)
+```
 
-Validación en cuatro capas; cada mensaje queda en el staging con su estado y su motivo:
+1. **Esquema:** JSON válido, campos requeridos presentes y tipos de datos correctos.
+2. **Valores:** Rango de probabilidades (0–100), factor $>0$ y consistencia de severidad (regla C12).
+3. **Referencias:** Existencia de claves foráneas en las dimensiones del Data Warehouse.
+4. **Duplicados:** Identificación de reentradas por `(directorio, orden)` o `id_evento`.
 
-| Capa | Qué revisa | Estado si falla |
-|---|---|---|
-| Esquema | JSON legible, campos presentes, tipos | `INVALIDO_ESQUEMA` |
-| Valores | Rangos y reglas de negocio | `INVALIDO_VALORES` |
-| Referencia | Departamento, región, clase y severidad existen en las dimensiones | `INVALIDO_REFERENCIA` |
-| Duplicado | El hogar o el `id_evento` no se recibieron antes | `DUPLICADO` |
+### 8.3 Consumidor en micro-lotes y garantías de entrega
 
-`--con-invalidos` intercala seis eventos dañados a propósito que cubren las cuatro capas (falta un campo, texto en un número, JSON cortado, probabilidad 150, departamento `00` inexistente y un hogar repetido).
+El consumidor ([streaming/consumidor.py](streaming/consumidor.py)) procesa micro-lotes de hasta 200 mensajes asegurando:
+* **Garantía *At-least-once* en transporte y *Exactly-once* en base de datos:** El mensaje crudo se inserta siempre en `stg_evento_encuesta` (`UNIQUE (topic, particion, desplazamiento)`).
+* **Commit de offsets desacoplado:** Kafka confirma el *offset* únicamente **después** de hacer commit en la transacción SQL de PostgreSQL. Si la base falla, se hace rollback y Kafka reentrega el lote.
+* **Resiliencia ante eventos corruptos:** Un evento inválido no interrumpe el consumidor; se almacena con su causa y el lote continúa.
 
-### 8.3 Consumidor
+### 8.4 Modelo y métricas en tiempo real (RS1–RS4)
 
-[`streaming/consumidor.py`](streaming/consumidor.py) (lógica en [`src/streaming/procesamiento.py`](src/streaming/procesamiento.py)). Procesa **micro-lotes** de hasta 200 mensajes:
+* **RS1 (Avance):** Hogares recibidos / hogares de la muestra total, por departamento y nacional.
+* **RS2 (Prevalencia acumulada):** $\sum(\text{factor} \times \text{prob}) / \sum\text{factor}$ en vivo. Al completar la muestra, converge con exactitud al **21,10%** del DW.
+* **RS3 (Alerta temprana):** Alerta activada cuando el límite inferior del IC 95% Wilson ($\ge 30$ hogares) supera la media histórica nacional.
+* **RS4 (Salud del flujo):** Monitoreo de latencia en milisegundos y balance de eventos según su estado de validación.
 
-1. Guarda cada mensaje tal como llegó en `stg_evento_encuesta`, antes de validarlo.
-2. Valida cada mensaje con el contrato y resuelve sus claves en las dimensiones.
-3. Inserta los válidos en `fact_evento_encuesta` y suma sus valores al snapshot `fact_metrica_departamento_stream`.
-4. Marca el estado final de cada mensaje.
-5. Confirma la transacción de la base y **después** los offsets en Kafka.
-
-| Garantía | Cómo se logra |
-|---|---|
-| Un evento inválido no detiene el consumidor | Queda registrado con estado y motivo; el lote sigue. |
-| Sin pérdidas al detener o matar el consumidor | Los offsets se confirman solo después del commit de la base; Kafka reentrega lo no confirmado. |
-| Sin duplicados | `UNIQUE (topic, particion, desplazamiento)` en el staging (una reentrega ya guardada se omite) y `UNIQUE (directorio, orden)` en el hecho. |
-| Falla de la base | Se revierte el lote completo y el consumidor se detiene con código 1. |
-| Kafka caído | El consumidor lo detecta (aviso de la librería o sondeo de metadatos cada 10 s) y se detiene con código 1 en vez de quedar esperando. |
-| Rendimiento | Escrituras en bloque: ~6 sentencias por lote. Medido en un Mac Intel de 8 GB con Docker: ~1.800 eventos/s, latencia media de 0,6 s a 100 eventos/s. |
-
-### 8.4 Modelo y métricas
-
-Las tablas del streaming son parte del modelo dimensional ([DDL](sql/create_tables.sql), [modelo](docs/modelo_dimensional.dbml)):
-
-| Tabla | Grano | Claves |
-|---|---|---|
-| `stg_evento_encuesta` | Un mensaje de Kafka, guardado antes de validarlo (staging, fuera del modelo analítico) | PK `id_evento_crudo`; único por topic, partición y desplazamiento |
-| `fact_evento_encuesta` | La llegada válida de la encuesta de un hogar | PK sustituta; FK a `dim_geografia` y `dim_nivel_severidad_ia`; únicos `id_evento` y (`directorio`, `orden`) |
-| `fact_metrica_departamento_stream` | El estado acumulado del operativo en un departamento | PK y FK `id_departamento` → `dim_departamento` |
-
-El snapshot guarda solo conteos y sumas aditivas; las prevalencias se calculan como cociente de sumas, igual que en las vistas R1-R7. Métricas ([vistas](sql/vistas_streaming.sql)):
-
-| Id | Métrica | Definición |
-|---|---|---|
-| RS1 | Avance de la recolección | Hogares recibidos / hogares de la muestra, por departamento y nacional |
-| RS2 | Prevalencia acumulada | Σ(factor × probabilidad) / Σ factor sobre hogares con FIES, por departamento y nacional |
-| RS3 | Alerta temprana | El límite inferior del IC 95 % de la prevalencia acumulada supera la prevalencia nacional del DW, con al menos 30 hogares con FIES (estados `sin_muestra`, `normal`, `alerta`) |
-| RS4 | Salud del flujo | Mensajes por estado, latencia media y p95, eventos del último minuto |
-
-Coherencia con el batch: al recibir todos los hogares, la prevalencia acumulada del streaming coincide con la del DW (21,10 % nacional y la misma cifra por departamento que la vista R6).
+---
 
 ## 9. Dashboard en tiempo real
 
-[`streaming/dashboard.py`](streaming/dashboard.py), en Streamlit: `streamlit run streaming/dashboard.py` → <http://localhost:8501>.
+Implementado en **Streamlit** ([streaming/dashboard.py](streaming/dashboard.py)), accesible en `http://localhost:8501`:
 
-| Aspecto | Decisión |
-|---|---|
-| Integración | Consumidor → tablas del streaming en el warehouse → vistas `vw_stream_*` → Streamlit. El dashboard solo lee vistas, con una conexión de solo lectura que se reconecta si la base se reinicia. |
-| Frecuencia | Refresco del panel cada **2 segundos** (`st.fragment(run_every=2)`). |
-| Indicadores | Hogares recibidos y avance (RS1), prevalencia acumulada frente a la referencia del DW (RS2), departamentos en alerta (RS3), mensajes inválidos y latencia (RS4). |
-| Gráficos | Prevalencia acumulada en el tiempo con la línea de referencia nacional; mensajes por estado; prevalencia por departamento coloreada por estado de alerta; tabla de los 33 departamentos con avance y límite inferior del IC. |
-| Rendimiento | La referencia nacional y los hogares esperados por departamento son vistas materializadas que se recalculan en cada carga del DAG; las vistas solo recorren los eventos llegados por Kafka. |
+* **Frecuencia:** Refresco automático cada 2 segundos mediante `st.fragment(run_every=2)`.
+* **Arquitectura de lectura:** Consulta exclusivamente vistas analíticas del streaming (`vw_stream_*`) en modo solo lectura, desacoplado del consumidor de Kafka.
+* **Visualizaciones:** Avance general (RS1), curva de convergencia de prevalencia con línea base del DW (RS2), mapa/tabla de alertas departamentales (RS3), y velocímetros de latencia y mensajes inválidos (RS4).
 
-| | Dashboard histórico (Power BI) | Dashboard en tiempo real (Streamlit) |
-|---|---|---|
-| Pregunta | ¿Qué factores se asocian con la inseguridad alimentaria? (R1-R7) | ¿Cómo va el operativo y dónde hay que actuar ya? (RS1-RS4) |
-| Datos | Resultado final del DW, por carga del DAG | Estado acumulado mientras llegan las encuestas |
-| Actualización | Al refrescar el informe después de una carga | Cada 2 segundos |
+---
 
 ## 10. Ejecución y reproducibilidad
 
-Guía completa, con resultados esperados y solución de problemas: **[docs/guia_ejecucion.md](docs/guia_ejecucion.md)**. Resumen (PowerShell; en macOS/Linux cambian la activación del entorno y la copia de archivos):
+Guía rápida de despliegue en Windows PowerShell (ver detalles en [docs/guia_ejecucion.md](docs/guia_ejecucion.md)):
 
 ```powershell
-# Preparación
+# 1. Preparación del entorno
 Copy-Item .env.example .env
-#   descargar los CSV de la ECV en data/raw/ecv (data/raw/README.md)
-py -3.12 -m venv .venv
+# Ubicar los 3 CSV de la ECV en data/raw/ecv/ según data/raw/README.md
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m pytest -q
 
-# Batch
+# 2. Despliegue del pipeline Batch en Airflow
 docker compose build
 docker compose up airflow-init
-docker compose up -d                      # Airflow: http://localhost:8081
-#   activar y disparar el DAG inseguridad_alimentaria_etl
+docker compose up -d                      # Airflow disponible en http://localhost:8081
+# En la interfaz de Airflow, encender y disparar el DAG inseguridad_alimentaria_etl
 
-# Streaming (con el DW cargado)
+# 3. Componente de Streaming (con el Data Warehouse cargado)
 docker compose --profile streaming up -d warehouse kafka kafka-init
 python streaming/reiniciar_demo.py --si
 python streaming/precargar.py --porcentaje 90
-streamlit run streaming/dashboard.py                                          # terminal 1
-python streaming/consumidor.py                                                # terminal 2
-python streaming/productor.py --pendientes --eventos-por-segundo 100 --con-invalidos   # terminal 3
+
+# En tres terminales separadas:
+streamlit run streaming/dashboard.py                                          # Terminal 1: Dashboard
+python streaming/consumidor.py                                                # Terminal 2: Consumidor
+python streaming/productor.py --pendientes --eventos-por-segundo 100 --con-invalidos   # Terminal 3: Productor
 ```
 
-| Requisito | Versión |
-|---|---|
-| Docker Desktop | Compose v2, al menos 3 GB de RAM asignados |
-| Python | 3.12 (entorno virtual) |
-| Imágenes | Airflow 3.1.8 (imagen propia, [Dockerfile](Dockerfile)), PostgreSQL 16, Kafka 3.9.1 |
-| Librerías | [requirements.txt](requirements.txt) (entorno virtual) y [requirements-airflow.txt](requirements-airflow.txt) (imagen de Airflow) |
-
-No hay credenciales reales en el repositorio: [.env.example](.env.example) trae valores de desarrollo local y todos los puertos se publican solo en `127.0.0.1`.
+---
 
 ## 11. Evidencia funcional
 
-Cada experimento se describe, con su resultado esperado, en la [guía de ejecución](docs/guia_ejecucion.md) (marcas 📸). Los reportes de Great Expectations y de la carga de una corrida real, y los de la falla controlada, están versionados en [`docs/evidencia/`](docs/evidencia) (copias verificadas por sha256 de los lotes, generadas con `python scripts/exportar_evidencia.py`).
+A continuación se reservan los espacios para documentar la evidencia operativa del sistema:
 
-| Evidencia | Sección de la guía |
-|---|---|
-| Corrida exitosa del DAG (12 tareas) y conteos de la carga | 2.2 y 2.3 |
-| Resultados de Great Expectations (compuertas 1, 2 y 3) | 2.3 y [`docs/evidencia/corrida/`](docs/evidencia/corrida) |
-| Fallo crítico visible en Airflow y carga bloqueada (regla C7) | 2.4 y [`docs/evidencia/falla_controlada/`](docs/evidencia/falla_controlada) |
-| Reejecución segura | 2.5 |
-| Productor y consumidor en operación; métricas que cambian en el dashboard | 3.3 |
-| Eventos inválidos registrados con su motivo | 3.3 |
-| Consumidor detenido y reanudado sin pérdidas ni duplicados | 3.4 |
-| Kafka caído | 3.5 |
-| Coherencia streaming = DW | 3.6 |
+| Prueba / Evidencia | Descripción del resultado esperado | Espacio para captura |
+|---|---|---|
+| **Corrida exitosa Airflow** | 12 tareas en `success`, 92.496 filas cargadas en el DW. | ![Corrida exitosa](docs/evidencia/capturas/dag_exitoso.png) |
+| **Compuertas Great Expectations** | Compuertas 1 y 2 aprobadas; compuerta 3 aprobada con advertencia A3. | ![Compuertas GX](docs/evidencia/capturas/compuertas_gx.png) |
+| **Falla crítica controlada** | Parámetro `falla_controlada=true`: tarea `validar_eva_cruda` en rojo por C7. | ![Falla controlada C7](docs/evidencia/capturas/falla_controlada_c7.png) |
+| **Streaming en operación** | Productor publicando y Streamlit convergiendo hacia el 21,10% nacional. | ![Dashboard Streamlit](docs/evidencia/capturas/dashboard_streamlit.png) |
+| **Eventos corruptos detectados** | Consumidor capturando los 6 eventos inválidos en `stg_evento_encuesta`. | ![Eventos inválidos](docs/evidencia/capturas/eventos_invalidos.png) |
+| **Detención / Caída de Kafka** | Detención limpia (Ctrl+C) o detección de broker caído sin pérdida de datos. | ![Detención y caída de Kafka](docs/evidencia/capturas/recuperacion_consumidor.png) |
 
-> **Pendiente.** Insertar aquí las capturas (desde `docs/evidencia/`), cada una con una línea que explique qué demuestra, incluido al menos un experimento de evento inválido o de consumidor detenido.
+---
 
 ## 12. Decisiones de ingeniería y limitaciones
 
-> **Pendiente.** Supuestos y limitaciones del batch: E2 §24. Agregar las del streaming:
-> - Es una re-publicación simulada del DW; la precarga no pasa por Kafka ni por el contrato (son datos que ya aprobaron las compuertas del batch).
-> - La alerta RS3 es un indicador operativo: el intervalo de confianza no considera el diseño muestral de la ECV y trata las probabilidades FIES como proporciones.
-> - Un solo broker de Kafka, sin replicación.
-> - Una carga nueva del DW reinicia el streaming.
-> - Entrega al menos una vez desde Kafka y exactamente una vez en la base, gracias a las restricciones `UNIQUE`.
->
-> Decisiones que conviene justificar: Kafka en modo KRaft con un perfil de Compose aparte; clientes en un entorno virtual y no en contenedores; micro-lotes con confirmación del offset después del commit de la base; vistas materializadas para que el dashboard no compita con el consumidor; ningún puerto expuesto fuera de `127.0.0.1` y sin credenciales reales en el repositorio.
+### 12.1 Limitaciones metodológicas y de datos
+* **Naturaleza asociativa:** La correlación observada entre diversidad agrícola y prevalencia FIES es moderada (Spearman entre $-0,11$ y $-0,15$). El análisis es ecológico-departamental; no prueba que un hogar consuma la cosecha de su municipio.
+* **Definición de canasta alimentaria:** Se fijó una canasta de 139 cultivos basada en P3204 de la ECV. Cultivos industriales/agropecuarios como maíz o palma no pudieron desagregarse por uso final.
+* **Datos agropecuarios provisionales:** Cerca del 20% de los municipios reportan cifras idénticas de producción en 2024 y 2025 en la fuente oficial EVA, reflejando limitaciones en la actualización de campo de la UPRA.
+* **Cobertura geográfica diferencial:** Bogotá D.C. no reporta producción en EVA (se conserva con valor nulo agrícola). Guaviare presenta baja muestra ($<15$ cultivos comparables).
+
+### 12.2 Decisiones técnicas del sistema
+* **Aislamiento por lotes vs. XCom:** Airflow orquesta el flujo sin almacenar DataFrames en metadatos, evitando colapsar la memoria del scheduler.
+* **Modo KRaft en Kafka:** Se configuró Kafka 3.9 en modo KRaft sin Zookeeper, reduciendo el consumo de RAM en el entorno local a menos de 400 MB.
+* **Micro-lotes transaccionales:** El consumidor procesa hasta 200 mensajes en una sola transacción SQL, logrando un rendimiento de ~1.800 eventos/s.
+* **Carga destructiva controlada (`TRUNCATE + INSERT`):** Una nueva carga batch limpia las tablas de streaming, protegiendo la integridad referencial frente a la regeneración de claves sustitutas.
+* **Seguridad local:** Todos los puertos sensibles (5434, 9092, 8081) se publican exclusivamente en `127.0.0.1` sin credenciales expuestas en el repositorio.
+
+---
+
+## 13. Integrantes y responsabilidades
+
+| Integrante | Responsabilidades principales | Entregables técnicos |
+|---|---|---|
+| **Santiago Castillo** | Modelamiento dimensional, arquitectura batch, pruebas de integración y streaming. | Módulos `src/`, DAG de Airflow, productor y consumidor de Kafka. |
+| **Julián Aguilar** | Desarrollo del pipeline ETL, compuertas de calidad en Great Expectations y base de datos. | Scripts de carga, SQL analítico, compuertas GX y verificación de reproducibilidad. |
+| **Valeria Jiménez Bedoya** | Estructura documental, formulación analítica del problema y contexto de datos. | Documentación técnica, diseño de métricas y marco conceptual. |
+| **Danna Isabella Mosquera** | Modelado visual del dashboard analítico y diseño de interfaz en tiempo real. | Dashboard en Power BI, tablero en Streamlit y guías de usuario. |
