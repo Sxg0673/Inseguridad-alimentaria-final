@@ -407,14 +407,38 @@ El informe en Power BI Desktop se conecta al Data Warehouse en PostgreSQL (`loca
 
 ### 7.3 Evidencia visual del informe Power BI
 
-`[ Espacio reservado para las capturas del dashboard en dashboards/ ]`
+* **R1–R5 — Panorama de la inseguridad alimentaria:** Distribución territorial y análisis según el acceso a servicios públicos, los choques económicos, las estrategias de afrontamiento y los quintiles de ingreso.
 
-* **R1 y R2:** Distribución territorial y brecha de servicios públicos:
-  *(Inserta aquí captura de mapa/barras R1 y gráfico R2)*
-* **R3, R4 y R5:** Choques económicos, estrategias de afrontamiento y gradiente de quintiles:
-  *(Inserta aquí captura de visualizaciones R3, R4 y R5)*
-* **R6 y R7 (Integración de la API):** Dispersión de diversidad agrícola y variación productiva:
-  *(Inserta aquí captura de gráficos de dispersión R6 y R7)*
+<img width="1202" height="667" alt="Dashboard integrado de los requerimientos R1 a R5" src="https://github.com/user-attachments/assets/55bf6006-0af7-4e41-911a-c20578ea22a8" />
+
+* **R6 — Diversidad agrícola e inseguridad alimentaria:** Relación entre la diversidad de cultivos y la prevalencia de inseguridad alimentaria por departamento, integrando información agrícola obtenida de la API.
+
+<img width="1052" height="647" alt="Dashboard de diversidad agrícola e inseguridad alimentaria" src="https://github.com/user-attachments/assets/40f7a026-4887-4d07-bec2-e823716a13f1" />
+
+* **R7 — Variación productiva e inseguridad alimentaria:** Comparación de la producción agrícola entre 2024 y 2025 y análisis de los cultivos en descenso frente a la prevalencia departamental.
+
+<img width="1057" height="657" alt="Dashboard de variación productiva e inseguridad alimentaria" src="https://github.com/user-attachments/assets/e9d388b2-6170-4f74-a247-22f4d9276f2b" />
+
+### Seguimiento del operativo simulado: RS1–RS4
+
+* **RS1 — Avance de recolección:** Seguimiento del porcentaje de hogares recibidos frente a la muestra esperada, a nivel nacional y departamental.
+
+<img width="1036" height="650" alt="image" src="https://github.com/user-attachments/assets/c11149eb-f5ea-4c7d-b8c3-5b9cc9c13931" />
+
+
+* **RS2 — Prevalencia acumulada en vivo:** Evolución de la prevalencia FIES ponderada conforme ingresan los eventos y comparación con la referencia anual del Data Warehouse.
+
+<img width="1042" height="652" alt="image" src="https://github.com/user-attachments/assets/f6309f00-d858-4b54-b357-6f166a33aac3" />
+
+
+* **RS3 — Alerta temprana departamental:** Identificación de departamentos cuyo límite inferior del intervalo Wilson del 95 % supera la prevalencia nacional de referencia.
+
+<img width="1038" height="647" alt="image" src="https://github.com/user-attachments/assets/49392a24-97d2-4754-b858-ffbda658d103" />
+
+
+* **RS4 — Salud del flujo y calidad de los eventos:** Monitoreo de la latencia media y p95, los mensajes válidos, los pendientes y los descartes por esquema, valores, referencias o duplicación.
+
+<img width="1037" height="650" alt="image" src="https://github.com/user-attachments/assets/1ed01999-2dcf-4a19-8c11-f97f1e19b6e0" />
 
 ---
 
@@ -466,11 +490,59 @@ El consumidor ([streaming/consumidor.py](streaming/consumidor.py)) procesa micro
 
 ## 9. Dashboard en tiempo real
 
-Implementado en **Streamlit** ([streaming/dashboard.py](streaming/dashboard.py)), accesible en `http://localhost:8501`:
+El dashboard integra los análisis de inseguridad alimentaria y producción agrícola con el seguimiento del flujo de encuestas. Se conecta al Data Warehouse en PostgreSQL mediante `localhost:5434`, base de datos `warehouse`.
 
-* **Frecuencia:** Refresco automático cada 2 segundos mediante `st.fragment(run_every=2)`.
-* **Arquitectura de lectura:** Consulta exclusivamente vistas analíticas del streaming (`vw_stream_*`) en modo solo lectura, desacoplado del consumidor de Kafka.
-* **Visualizaciones:** Avance general (RS1), curva de convergencia de prevalencia con línea base del DW (RS2), mapa/tabla de alertas departamentales (RS3), y velocímetros de latencia y mensajes inválidos (RS4).
+Las páginas analíticas R1–R7 utilizan el modo **Importar**. Las páginas de streaming RS1–RS4 utilizan **DirectQuery**, con actualización automática configurada cada dos segundos en Power BI Desktop.
+
+| Requerimiento | Información presentada |
+|---|---|
+| **RS1. Avance de recolección** | Hogares recibidos frente a la muestra esperada, con seguimiento nacional y departamental. |
+| **RS2. Prevalencia acumulada** | Evolución de la prevalencia FIES ponderada y comparación con la referencia anual del DW. |
+| **RS3. Alerta departamental** | Identificación de departamentos cuyo límite inferior Wilson del 95 % supera la prevalencia nacional de referencia, con un mínimo de 30 hogares con FIES. |
+| **RS4. Salud y calidad** | Latencia media y p95, mensajes válidos, pendientes y descartados por esquema, valores, referencias o duplicación. |
+
+La prevalencia se calcula como el cociente entre la suma de las probabilidades FIES multiplicadas por el factor de expansión y la suma de los factores de los hogares con información FIES. No se promedian los porcentajes departamentales.
+
+## Hallazgos del dashboard
+
+### Avance y prevalencia acumulada
+
+La simulación completó **87.060 hogares**, equivalentes al **100 % de la muestra esperada**. Se precargaron 78.354 hogares y los 8.706 restantes ingresaron mediante Kafka.
+
+La prevalencia ponderada final de inseguridad alimentaria **moderada o grave fue de 21,10 %**, mientras que la **grave fue de 3,42 %**. Durante el procesamiento, la prevalencia acumulada osciló entre 21,06 % y 21,11 %, hasta coincidir con la referencia del DW.
+
+De los hogares recibidos, **86.342 tenían información FIES** y **718 no contaban con ella**. Estos últimos se incluyen en el avance de recolección, pero se excluyen del cálculo de prevalencia.
+
+### Alertas departamentales
+
+Se identificaron **13 territorios en alerta**: Chocó, Sucre, La Guajira, Vichada, Córdoba, Magdalena, Bolívar, Atlántico, Cesar, Cauca, Nariño, Putumayo y Guaviare.
+
+Las mayores prevalencias moderadas o graves correspondieron a **Chocó (56,76 %)**, **Sucre (50,09 %)** y **La Guajira (47,76 %)**. Chocó superó la referencia nacional en **35,66 puntos porcentuales**.
+
+Estas alertas permiten priorizar el seguimiento territorial. El intervalo Wilson funciona como una aproximación operativa y no incorpora el diseño muestral complejo de la ECV.
+
+### Calidad y latencia del flujo
+
+| Indicador | Resultado |
+|---|---:|
+| Mensajes recibidos por Kafka | 8.712 |
+| Mensajes válidos | 8.706 |
+| Mensajes descartados | 6 |
+| Pendientes de validación | 0 |
+| Latencia media | 546,0 ms |
+| Latencia p95 | 1.012,8 ms |
+
+Los seis descartes fueron introducidos deliberadamente para verificar los controles: tres por esquema, uno por valores, uno por referencia inexistente y uno por duplicación. El flujo continuó procesando los eventos válidos.
+
+### Diversidad agrícola y variación productiva: R6 y R7
+
+La correlación de Spearman entre diversidad de cultivos y prevalencia moderada o grave fue de **−0,113**, considerando los 32 territorios con información agrícola. La relación entre porcentaje de cultivos en descenso y prevalencia fue de **−0,147**.
+
+Ambas asociaciones son **débiles** y no permiten establecer causalidad. Bogotá D.C. se excluye de estos cálculos por ausencia de información agrícola. Guaviare requiere cautela porque dispone de solo diez cultivos comparables.
+
+### Alcance de los resultados
+
+El streaming reproduce hogares de la **ECV 2025** previamente cargados en el DW; no representa una nueva recolección de campo. Por ello, alcanzar el 100 % corresponde a completar la muestra simulada, y la convergencia de la prevalencia verifica la coherencia del procesamiento.
 
 ---
 
