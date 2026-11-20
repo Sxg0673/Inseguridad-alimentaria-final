@@ -99,7 +99,7 @@ El sistema distingue dos horizontes analíticos complementarios:
 #### Requerimientos de Streaming (Baja latencia, eventos en Kafka y Streamlit)
 * **RS1 (Avance de recolección):** Monitorear en tiempo real el porcentaje de hogares encuestados recibidos frente a la muestra esperada (nacional y departamental).
 * **RS2 (Prevalencia acumulada en vivo):** Calcular la prevalencia FIES ponderada acumulada a medida que ingresan los eventos, observando su convergencia con la referencia anual del DW.
-* **RS3 (Alerta temprana departamental):** Activar alertas operativas automáticas para departamentos donde el límite inferior del intervalo de confianza (IC 95% Wilson) supera la prevalencia de referencia nacional.
+* **RS3 (Alerta temprana departamental):** Activar alertas operativas automáticas para departamentos donde el límite inferior del intervalo de confianza (IC 95 %, aproximación normal) supera la prevalencia de referencia nacional.
 * **RS4 (Salud del flujo y calidad):** Fiscalizar la latencia del pipeline (media y p95) y contabilizar mensajes descartados por violación del contrato (esquema, valores, referencias o duplicados).
 
 > **Justificación del componente de streaming:** En un operativo censal o de encuesta de campo real, esperar el cierre y consolidación anual (6 a 12 meses) retrasa la intervención social. Monitorear los microdatos a medida que los encuestadores sincronizan sus dispositivos permite a las agencias humanitarias identificar departamentos en alerta nutricional semanas antes de la publicación oficial.
@@ -117,7 +117,7 @@ El sistema distingue dos horizontes analíticos complementarios:
 | **R7** | ¿Las caídas productivas agrícolas se asocian con mayor hambre? | Cálculo de variación porcentual interanual (2024–2025) y % de cultivos en descenso. | Vistas `vw_r7_variacion_cultivo` y `vw_r7_descenso_departamental`. |
 | **RS1** | ¿Cuál es el avance del operativo de recolección en tiempo real? | Agregación en micro-lotes de encuestas recibidas vs. muestra total de la ECV. | Vista `vw_stream_departamento_actual` / Métrica RS1. |
 | **RS2** | ¿A qué valor converge la prevalencia acumulada durante el flujo? | Ratio acumulativo de $\sum(\text{factor} \times \text{prob}) / \sum\text{factor}$ en PostgreSQL. | Vista `vw_stream_nacional` / Métrica RS2. |
-| **RS3** | ¿Qué territorios requieren focalización urgente durante la recolección? | Cálculo dinámico del límite inferior del IC 95% Wilson con umbral de 30 hogares. | Indicador visual de alerta en Streamlit / Métrica RS3. |
+| **RS3** | ¿Qué territorios requieren focalización urgente durante la recolección? | Cálculo dinámico del límite inferior del IC 95 % (aproximación normal) con un mínimo de 30 hogares. | Indicador visual de alerta en Streamlit / Métrica RS3. |
 | **RS4** | ¿El canal de eventos opera con baja latencia y sin corromper datos? | Trazabilidad en `stg_evento_encuesta` registrando latencia y causa de rechazo. | Vista `vw_stream_salud` / Métrica RS4. |
 
 ---
@@ -210,15 +210,20 @@ flowchart TB
     C --> ST
     DW -. "FK a dimensiones" .- ST
     ST -- "cada 2 s" --> SL
+
+    classDef nuevo fill:#fde7c8,stroke:#d9822b,stroke-width:2px,color:#000
+    class T,P,C,ST,SL nuevo
 ```
+
+Los nodos en naranja son lo nuevo de esta entrega: Kafka, el productor, el consumidor con el contrato del evento, las tablas del streaming y el dashboard en tiempo real. El resto es el batch de la Segunda Entrega, ahora con programación semanal y evidencia versionada.
 
 | Componente | Dónde corre | Función |
 |---|---|---|
 | **Airflow 3.1.8** | Docker Compose | Orquestación del pipeline batch, ejecución de compuertas y aislamiento por lotes. |
 | **PostgreSQL 16** | Docker Compose | Almacén de metadatos de Airflow (puerto 5432 interno) y Data Warehouse analítico (puerto publicado 5434). |
 | **Apache Kafka 3.9.1** | Docker Compose (perfil `streaming`) | Transporte de eventos en modo KRaft, topic `encuestas-hogares` con 3 particiones. |
-| **Productor y Consumidor** | Entorno virtual Python 3.12/3.13 | Emisión de eventos simulados, validación de contrato en micro-lotes e inserción en el DW. |
-| **Streamlit 1.67** | Entorno virtual Python 3.12/3.13 | Dashboard de baja latencia con refresco cada 2 segundos conectado a las vistas de streaming. |
+| **Productor y Consumidor** | Entorno virtual Python 3.12 | Emisión de eventos simulados, validación de contrato en micro-lotes e inserción en el DW. |
+| **Streamlit 1.67** | Entorno virtual Python 3.12 | Dashboard de baja latencia con refresco cada 2 segundos conectado a las vistas de streaming. |
 | **Power BI Desktop** | Equipo local del analista | Conexión directa al Data Warehouse para análisis multidimensional histórico (R1–R7). |
 
 ---
@@ -368,7 +373,7 @@ erDiagram
 ### 6.3 Estrategia de carga transaccional e idempotente
 
 La etapa de carga ([src/carga.py](src/carga.py)) sigue una estricta estrategia transaccional:
-1. **Reinicio coordinado:** En una sola transacción se ejecuta `TRUNCATE ... CASCADE` sobre las 11 tablas del modelo y las 3 tablas del streaming. Esto garantiza que una recarga batch limpie los datos transaccionales de streaming, ya que sus claves foráneas dependen de las claves sustitutas reconstruidas.
+1. **Reinicio coordinado:** En una sola transacción se ejecuta un único `TRUNCATE ... RESTART IDENTITY` sobre las 11 tablas del modelo y las 3 tablas del streaming. Esto garantiza que una recarga batch limpie los datos transaccionales de streaming, ya que sus claves foráneas dependen de las claves sustitutas reconstruidas.
 2. **Carga en bloque:** Inserción de dimensiones antes que hechos mediante `execute_values` de `psycopg2` en lotes de 5.000 filas.
 3. **Conciliación post-inserción:** Se compara `COUNT(*)` en PostgreSQL contra la cantidad de registros en cada archivo Parquet del lote. Si existe una sola diferencia, se ejecuta `ROLLBACK` total.
 4. **Recreación de vistas:** Se ejecutan [sql/vistas_analiticas.sql](sql/vistas_analiticas.sql) y [sql/vistas_streaming.sql](sql/vistas_streaming.sql), refrescando las vistas materializadas de referencia.
@@ -377,7 +382,7 @@ La etapa de carga ([src/carga.py](src/carga.py)) sigue una estricta estrategia t
 
 * **Vistas Analíticas R1–R7:** Entregan los porcentajes ya ponderados por `factor_expansion` y evitan errores comunes de promediar porcentajes:
   * `vw_r1_distribucion_territorial`, `vw_r2_servicios_publicos`, `vw_r3_choques_economicos`, `vw_r4_estrategias_severidad`, `vw_r5_quintiles_ingreso`, `vw_r6_diversidad_departamental`, `vw_r7_variacion_cultivo`, `vw_r7_descenso_departamental`.
-* **Vistas Materializadas de Streaming:** `vw_stream_referencia_nacional` y `vw_stream_hogares_esperados_depto`, recalculadas tras cada corrida batch para que las consultas concurrentes de Streamlit no compitan con la inserción del consumidor.
+* **Vistas Materializadas de Streaming:** `mv_stream_referencia_nacional` (prevalencia nacional de referencia) y `mv_stream_esperados_departamento` (hogares esperados por departamento), recalculadas tras cada corrida batch para que las consultas concurrentes de Streamlit no compitan con la inserción del consumidor.
 
 ---
 
@@ -431,7 +436,7 @@ El informe en Power BI Desktop se conecta al Data Warehouse en PostgreSQL (`loca
 <img width="1042" height="652" alt="image" src="https://github.com/user-attachments/assets/f6309f00-d858-4b54-b357-6f166a33aac3" />
 
 
-* **RS3 — Alerta temprana departamental:** Identificación de departamentos cuyo límite inferior del intervalo Wilson del 95 % supera la prevalencia nacional de referencia.
+* **RS3 — Alerta temprana departamental:** Identificación de departamentos cuyo límite inferior del IC 95 % (aproximación normal) supera la prevalencia nacional de referencia.
 
 <img width="1038" height="647" alt="image" src="https://github.com/user-attachments/assets/49392a24-97d2-4754-b858-ffbda658d103" />
 
@@ -475,7 +480,7 @@ Mensaje de Kafka ──► [Capa 1: Esquema] ──► [Capa 2: Valores] ──�
 ### 8.3 Consumidor en micro-lotes y garantías de entrega
 
 El consumidor ([streaming/consumidor.py](streaming/consumidor.py)) procesa micro-lotes de hasta 200 mensajes asegurando:
-* **Garantía *At-least-once* en transporte y *Exactly-once* en base de datos:** El mensaje crudo se inserta siempre en `stg_evento_encuesta` (`UNIQUE (topic, particion, desplazamiento)`).
+* **Garantía *At-least-once* en transporte y *Exactly-once* en base de datos:** El mensaje crudo se inserta siempre en `stg_evento_encuesta` (`UNIQUE (topic, particion, desplazamiento)`) y cada hogar entra una sola vez en `fact_evento_encuesta` (`UNIQUE (directorio, orden)` y `UNIQUE (id_evento)`, con `ON CONFLICT DO NOTHING`).
 * **Commit de offsets desacoplado:** Kafka confirma el *offset* únicamente **después** de hacer commit en la transacción SQL de PostgreSQL. Si la base falla, se hace rollback y Kafka reentrega el lote.
 * **Resiliencia ante eventos corruptos:** Un evento inválido no interrumpe el consumidor; se almacena con su causa y el lote continúa.
 
@@ -483,14 +488,16 @@ El consumidor ([streaming/consumidor.py](streaming/consumidor.py)) procesa micro
 
 * **RS1 (Avance):** Hogares recibidos / hogares de la muestra total, por departamento y nacional.
 * **RS2 (Prevalencia acumulada):** $\sum(\text{factor} \times \text{prob}) / \sum\text{factor}$ en vivo. Al completar la muestra, converge con exactitud al **21,10%** del DW.
-* **RS3 (Alerta temprana):** Alerta activada cuando el límite inferior del IC 95% Wilson ($\ge 30$ hogares) supera la media histórica nacional.
+* **RS3 (Alerta temprana):** Alerta activada cuando el límite inferior del IC 95 %, $p - 1{,}96\sqrt{p(1-p)/n}$ ($\ge 30$ hogares con FIES), supera la prevalencia nacional del DW (21,10 %).
 * **RS4 (Salud del flujo):** Monitoreo de latencia en milisegundos y balance de eventos según su estado de validación.
 
 ---
 
 ## 9. Dashboard en tiempo real
 
-El dashboard integra los análisis de inseguridad alimentaria y producción agrícola con el seguimiento del flujo de encuestas. Se conecta al Data Warehouse en PostgreSQL mediante `localhost:5434`, base de datos `warehouse`.
+El dashboard en tiempo real del sistema es **Streamlit** ([streaming/dashboard.py](streaming/dashboard.py)): lee las vistas `vw_stream_*` cada 2 segundos y muestra RS1–RS4 mientras el consumidor procesa los eventos (`streamlit run streaming/dashboard.py`; captura en la sección 11).
+
+Además, el informe de Power BI incorpora páginas de seguimiento RS1–RS4 sobre las mismas vistas. Ese informe integra los análisis de inseguridad alimentaria y producción agrícola con el seguimiento del flujo de encuestas. Se conecta al Data Warehouse en PostgreSQL mediante `localhost:5434`, base de datos `warehouse`.
 
 Las páginas analíticas R1–R7 utilizan el modo **Importar**. Las páginas de streaming RS1–RS4 utilizan **DirectQuery**, con actualización automática configurada cada dos segundos en Power BI Desktop.
 
@@ -498,7 +505,7 @@ Las páginas analíticas R1–R7 utilizan el modo **Importar**. Las páginas de 
 |---|---|
 | **RS1. Avance de recolección** | Hogares recibidos frente a la muestra esperada, con seguimiento nacional y departamental. |
 | **RS2. Prevalencia acumulada** | Evolución de la prevalencia FIES ponderada y comparación con la referencia anual del DW. |
-| **RS3. Alerta departamental** | Identificación de departamentos cuyo límite inferior Wilson del 95 % supera la prevalencia nacional de referencia, con un mínimo de 30 hogares con FIES. |
+| **RS3. Alerta departamental** | Identificación de departamentos cuyo límite inferior del IC 95 % (aproximación normal) supera la prevalencia nacional de referencia, con un mínimo de 30 hogares con FIES. |
 | **RS4. Salud y calidad** | Latencia media y p95, mensajes válidos, pendientes y descartados por esquema, valores, referencias o duplicación. |
 
 La prevalencia se calcula como el cociente entre la suma de las probabilidades FIES multiplicadas por el factor de expansión y la suma de los factores de los hogares con información FIES. No se promedian los porcentajes departamentales.
@@ -519,7 +526,7 @@ Se identificaron **13 territorios en alerta**: Chocó, Sucre, La Guajira, Vichad
 
 Las mayores prevalencias moderadas o graves correspondieron a **Chocó (56,76 %)**, **Sucre (50,09 %)** y **La Guajira (47,76 %)**. Chocó superó la referencia nacional en **35,66 puntos porcentuales**.
 
-Estas alertas permiten priorizar el seguimiento territorial. El intervalo Wilson funciona como una aproximación operativa y no incorpora el diseño muestral complejo de la ECV.
+Estas alertas permiten priorizar el seguimiento territorial. El intervalo funciona como una aproximación operativa y no incorpora el diseño muestral complejo de la ECV.
 
 ### Calidad y latencia del flujo
 
@@ -580,9 +587,9 @@ python streaming/productor.py --pendientes --eventos-por-segundo 100 --con-inval
 
 ## 11. Evidencia funcional
 
-A continuación se reservan los espacios para documentar la evidencia operativa del sistema:
+Capturas de la evidencia operativa del sistema. El paso a paso de cada experimento está en la [guía de ejecución](docs/guia_ejecucion.md).
 
-| Prueba / Evidencia | Descripción del resultado esperado | Espacio para captura |
+| Prueba / Evidencia | Resultado | Captura |
 |---|---|---|
 | **Corrida exitosa Airflow** | 12 tareas en `success`, 92.496 filas cargadas en el DW. | ![Corrida exitosa](docs/evidencia/capturas/dag_exitoso.png) |
 | **Compuertas Great Expectations** | Compuertas 1 y 2 aprobadas; compuerta 3 aprobada con advertencia A3. | ![Compuertas GX](docs/evidencia/capturas/compuertas_gx.png) |
@@ -603,7 +610,7 @@ A continuación se reservan los espacios para documentar la evidencia operativa 
 
 ### 12.2 Decisiones técnicas del sistema
 * **Aislamiento por lotes vs. XCom:** Airflow orquesta el flujo sin almacenar DataFrames en metadatos, evitando colapsar la memoria del scheduler.
-* **Modo KRaft en Kafka:** Se configuró Kafka 3.9 en modo KRaft sin Zookeeper, reduciendo el consumo de RAM en el entorno local a menos de 400 MB.
+* **Modo KRaft en Kafka:** Se configuró Kafka 3.9 en modo KRaft sin Zookeeper, con heap de 256–512 MB y límite de memoria de 1 GB para el contenedor, adecuado para equipos de 8 GB.
 * **Micro-lotes transaccionales:** El consumidor procesa hasta 200 mensajes en una sola transacción SQL, logrando un rendimiento de ~1.800 eventos/s.
 * **Carga destructiva controlada (`TRUNCATE + INSERT`):** Una nueva carga batch limpia las tablas de streaming, protegiendo la integridad referencial frente a la regeneración de claves sustitutas.
 * **Seguridad local:** Todos los puertos sensibles (5434, 9092, 8081) se publican exclusivamente en `127.0.0.1` sin credenciales expuestas en el repositorio.
